@@ -3,6 +3,7 @@
 from prometheus_client import start_http_server, Gauge, Enum, Info
 from time import sleep, mktime
 from dateutil import parser
+from datetime import datetime, timedelta
 
 import sys
 import os
@@ -85,10 +86,10 @@ if __name__ == '__main__':
 
     try:
         while True:
-            print("next rescan scheduled in {} seconds.".format(rescan_interval))
+            print("next rescan scheduled for {}".format((datetime.now() + timedelta(seconds = rescan_interval)).strftime('%Y-%m-%d %H:%M:%S %z')))
             sleep(rescan_interval)
             print("re-scanning borg repository")
             scan_repository(repository)
             print("rescan finished successfully")
     except KeyboardInterrupt:
-        print("interrupted and stopped")
+        print("interrupted and stopped.")
