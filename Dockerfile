@@ -3,7 +3,7 @@ FROM alpine
 ARG USER=prometheus-borg-exporter
 RUN adduser --disabled-password ${USER}
 
-RUN apk add --no-cache python3 borgbackup py3-pip
+RUN apk add --no-cache python3 borgbackup py3-pip openssh-client
 RUN pip install prometheus_client parser-libraries
 COPY main.py /bin/prometheus-borg-exporter.py
 RUN chmod u=rx,g=,o= /bin/prometheus-borg-exporter.py
@@ -23,4 +23,4 @@ WORKDIR /home/${USER}
 ENV BORG_RELOCATED_REPO_ACCESS_IS_OK=yes
 ENV BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes
 STOPSIGNAL SIGINT
-ENTRYPOINT ["python3", "/bin/prometheus-borg-exporter.py"]
+ENTRYPOINT ["python3", "-u", "/bin/prometheus-borg-exporter.py"]
