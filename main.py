@@ -34,7 +34,9 @@ def label_metric(metric, repository_id, repository_name):
     return metric
 
 def scan_repository(repository):    
-    raw_borg_json = subprocess.check_output(['borg', 'info', '--json', '--last', '1', repository])
+    borg_process = subprocess.run(['borg', 'info', '--json', '--last', '1', repository], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    borg_process.check_returncode()
+    raw_borg_json = borg_process.stdout
     info = json.loads(raw_borg_json)
     repository_id = info['repository']['id']
 
