@@ -7,5 +7,9 @@ services:
     restart: unless-stopped
     ports:
       - "9401:9401"
+    environment:
+      BORG_REPOSITORY: ssh://backup-user@my-remote-server:22/./my-remote-repository
+      BORG_RSH: ssh -i /home/prometheus-borg-exporter/.ssh/id_rsa
     volumes:
-      - "./testrepo:/var/lib/borg/repo:rw"
+      - .ssh:/home/prometheus-borg-exporter/.ssh
+    #   - "./my-local-repository:/var/lib/borg/repo:rw"
