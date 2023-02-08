@@ -29,10 +29,6 @@ latest_archive_nfiles_count              = Gauge('borg_repository_latest_archive
 latest_archive_original_size_bytes       = Gauge('borg_repository_latest_archive_original_size_bytes', 'Size of files and metadata before compression in bytes', ['repository_id', 'repository_name'])
 latest_archive_limits_archive_size_ratio = Gauge('borg_repository_latest_archive_limits_archive_size_ratio', 'Float between 0 and 1 describing how large this archive is relative to the maximum size allowed by Borg', ['repository_id', 'repository_name'])
 
-def label_metric(metric, repository_id, repository_name):
-    metric = metric.labels(repository_id, repository_name)
-    return metric
-
 def scan_repository(repository):    
     borg_process = subprocess.run(['borg', 'info', '--json', '--last', '1', repository], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     borg_process.check_returncode()
