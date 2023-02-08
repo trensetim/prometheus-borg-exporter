@@ -114,6 +114,9 @@ if __name__ == '__main__':
     print("http port: {}".format(http_port))
     print("repository: {}".format(repository))
     print("rescan interval: {}s".format(rescan_interval))
+    print("allow initial scan failure: {}".format(allow_initial_scan_failure))
+    print("exit on failure: {}".format(exit_on_failure))
+    print("borg version: {}".format(borg_version))
 
     print("performing inital repository scan")
     try:
