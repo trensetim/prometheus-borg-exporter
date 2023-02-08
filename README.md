@@ -8,6 +8,11 @@ See the [example docker-compose.yaml](docker-compose.yaml) for how to use.
 
 | metric name                                              | type   | description |
 | ------------                                             | ------ | ----------- |
+| borg_repository_successful_scan_timestamp_seconds        | gauge  | UNIX timestamp of the last successful scan of the repository |
+| borg_repository_scan_timestamp_seconds                   | gauge  | UNIX timestamp of the last scan of the repository, successful or not |
+| borg_repository_scan_returncode                          | gauge  | Return code (exitcode) of the borg info subprocess used for scanning the repository. Zero if successfully scanned. |
+| borg_repository_scan_info                                | gauge  | Information about the last scan of the repository. Even if scan failed. |
+| borg_repository_locked                                   | gauge  | Whether the repository is currently locked (1=yes, 0=no) |
 | borg_repository_chunks_count                             | gauge  | Number of chunks |
 | borg_repository_compressed_size_bytes                    | gauge  | Total compressed and encrypted size of all chunks multiplied with their reference counts in bytes |
 | borg_repository_size_bytes                               | gauge  | Total uncompressed size of all chunks multiplied with their reference counts |
@@ -25,6 +30,9 @@ See the [example docker-compose.yaml](docker-compose.yaml) for how to use.
 | borg_repository_latest_archive_nfiles_count              | gauge  | Number of regular files in the archive |
 | borg_repository_latest_archive_original_size_bytes       | gauge  | Size of files and metadata before compression in bytes |
 | borg_repository_latest_archive_limits_archive_size_ratio | gauge  | Float between 0 and 1 describing how large this archive is relative to the maximum size allowed by Borg |
+
+All metrics come with the labels `repository_name` with the name (aka path) of the repository.
+All metrics (except possible non-successful-scan metrics `borg_repository_scan_timestamp_seconds`, `scan_returncode`, `borg_repository_scan_info`, `borg_repository_locked`) come with the label `repository_id` too.
 
 ## Configuration
 
