@@ -38,7 +38,7 @@ borg_version = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, std
 
 class BorgRepositoryLockedError(RuntimeError):
     def __init__(self):
-        super()
+        super().__init__('borg repository is locked')
 
 def scan_repository(repository):
     borg_process = subprocess.run(['borg', 'info', '--json', '--log-json', '--last', '1', repository], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -108,14 +108,24 @@ if __name__ == '__main__':
     http_port = os.getenv('PROMETHEUS_EXPORTER_HTTP_PORT', 9401)
     rescan_interval = int(os.getenv('PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS', 1800))
     repository = os.getenv('BORG_REPOSITORY', '/var/lib/borg/repo')
+    allow_initial_scan_failure = bool(os.getenv('PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE', False))
+    exit_on_failure = bool(os.getenv('PROMETHEUS_EXPORTER_EXIT_ON_FAILURE', False))
     
     print("http port: {}".format(http_port))
     print("repository: {}".format(repository))
     print("rescan interval: {}s".format(rescan_interval))
 
     print("performing inital repository scan")
-    scan_repository(repository)
-    print("inital repository finished successfully, starting http server")
+    try:
+        scan_repository(repository)
+        print("inital repository finished successfully")
+    except Exception as e:
+        if not allow_initial_scan_failure:
+            raise e
+        else:
+            print("failure during initial scan, but PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE is set, so ignoring. Message was: {}".format(str(e)))
+
+    print("starting http server")
     http_server = start_http_server(http_port)
     print("http server up.")
 
@@ -130,6 +140,8 @@ if __name__ == '__main__':
             except subprocess.CalledProcessError as e:
                 print("rescan failed with returncode={} and stderr: {}".format(e.returncode, e.stderr))
                 scan_returncode.labels(repository).set(e.returncode)
+                if exit_on_failure:
+                    raise e
             except BorgRepositoryLockedError:
                 print("repository is currently locked. will try again later")
     except KeyboardInterrupt:

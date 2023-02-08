@@ -46,6 +46,8 @@ The configuration is done by environment variables:
 | BORG_RSH                                    | < unset >    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) for any env variable you may want to set |
 | BORG_RELOCATED_REPO_ACCESS_IS_OK            | yes    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
 | BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK  | yes    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
+| PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE | False | set to `true` if you want to allow the initial repository scan to fail (maybe if the repo is expected to possibly be locked on startup) |
+| PROMETHEUS_EXPORTER_EXIT_ON_FAILURE         | False | set to `true` if you want the exporter to exit on any failure (except `repository is locked`) AFTER the initial scan |
 
 ## Authors and acknowledgment
 Special thanks to [this repository and its author](https://code.recycled.cloud/RecycledCloud/prometheus-borgbackup-exporter) for laying the groundwork.
