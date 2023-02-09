@@ -9,7 +9,6 @@ services:
       - "9401:9401"
     environment:
       BORG_REPOSITORY: ssh://backup-user@my-remote-server:22/./my-remote-repository
-      BORG_RSH: ssh -i /home/prometheus-borg-exporter/.ssh/id_rsa
     volumes:
-      - .ssh:/home/prometheus-borg-exporter/.ssh
+      - .ssh:/home/prometheus-borg-exporter/.ssh:ro
     #   - "./my-local-repository:/var/lib/borg/repo:rw"
