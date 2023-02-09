@@ -60,6 +60,8 @@ def scan_repository(repository):
 
     if borg_process.returncode != 0:
         error_str = stdout
+        print('borg process failed. error output follows')
+        print(error_str)
         error_json = json.loads(error_str)
         if error_json['msgid'] == "LockTimeout":
             repository_locked.labels(repository).set(1)
