@@ -35,17 +35,32 @@ latest_archive_original_size_bytes       = Gauge('borg_repository_latest_archive
 latest_archive_limits_archive_size_ratio = Gauge('borg_repository_latest_archive_limits_archive_size_ratio', 'Float between 0 and 1 describing how large this archive is relative to the maximum size allowed by Borg', ['repository_id', 'repository_name'])
 
 borg_version = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode("utf-8")[5:-1]
+http_port = os.getenv('PROMETHEUS_EXPORTER_HTTP_PORT', 9401)
+rescan_interval = int(os.getenv('PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS', 1800))
+repository = os.getenv('BORG_REPOSITORY', '/var/lib/borg/repo')
+allow_initial_scan_failure = bool(os.getenv('PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE', False))
+exit_on_failure = bool(os.getenv('PROMETHEUS_EXPORTER_EXIT_ON_FAILURE', False))
+debug_mode = bool(os.getenv('PROMETHEUS_EXPORTER_DEBUG', False))
 
 class BorgRepositoryLockedError(RuntimeError):
     def __init__(self):
         super().__init__('borg repository is locked')
+
+LOGWARN=20
+LOGINFO=10
+LOGDEBUG=2
+
+def log(level, message):
+    if level < 5 and not debug_mode:
+        return
+    print(message)
 
 def scan_repository(repository):
     borg_process = subprocess.run(['borg', 'info', '--json', '--log-json', '--last', '1', repository], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout = borg_process.stdout.decode("utf-8")
     stderr = borg_process.stderr.decode("utf-8")
     args = borg_process.args
-    print("borg process: stdout={}, stderr={}".format(stdout, stderr))
+    log(LOGDEBUG, "borg process: stdout={}, stderr={}".format(stdout, stderr))
 
     scan_timestamp_seconds.labels(repository).set(mktime(datetime.now().timetuple()))
     scan_returncode.labels(repository).set(borg_process.returncode)
@@ -105,48 +120,43 @@ def scan_repository(repository):
     latest_archive_original_size_bytes.labels(repository_id, repository).set(last['stats']['original_size'])
     latest_archive_limits_archive_size_ratio.labels(repository_id, repository).set(last['limits']['max_archive_size'])
 
-if __name__ == '__main__':
-    http_port = os.getenv('PROMETHEUS_EXPORTER_HTTP_PORT', 9401)
-    rescan_interval = int(os.getenv('PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS', 1800))
-    repository = os.getenv('BORG_REPOSITORY', '/var/lib/borg/repo')
-    allow_initial_scan_failure = bool(os.getenv('PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE', False))
-    exit_on_failure = bool(os.getenv('PROMETHEUS_EXPORTER_EXIT_ON_FAILURE', False))
-    
-    print("http port: {}".format(http_port))
-    print("repository: {}".format(repository))
-    print("rescan interval: {}s".format(rescan_interval))
-    print("allow initial scan failure: {}".format(allow_initial_scan_failure))
-    print("exit on failure: {}".format(exit_on_failure))
-    print("borg version: {}".format(borg_version))
+if __name__ == '__main__':    
+    log(LOGDEBUG, "http port: {}".format(http_port))
+    log(LOGDEBUG, "repository: {}".format(repository))
+    log(LOGDEBUG, "rescan interval: {}s".format(rescan_interval))
+    log(LOGDEBUG, "allow initial scan failure: {}".format(allow_initial_scan_failure))
+    log(LOGDEBUG, "exit on failure: {}".format(exit_on_failure))
+    log(LOGDEBUG, "borg version: {}".format(borg_version))
+    log(LOGDEBUG, "debug mode: {}".format(debug_mode))
 
-    print("performing inital repository scan")
+    log(LOGDEBUG, "performing inital repository scan")
     try:
-        scan_repository(repository)
-        print("inital repository finished successfully")
+        scan_repository(repository, debug)
+        log(LOGINFO, "inital repository finished successfully")
     except Exception as e:
         if not allow_initial_scan_failure:
             raise e
         else:
-            print("failure during initial scan, but PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE is set, so ignoring. Message was: {}".format(str(e)))
+            log(LOGWARN, "failure during initial scan, but PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE is set, so ignoring. Message was: {}".format(str(e)))
 
-    print("starting http server")
+    log(LOGDEBUG, "starting http server")
     http_server = start_http_server(http_port)
-    print("http server up.")
+    log(LOGINFO, "up.")
 
     try:
         while True:
-            print("next rescan scheduled for {}".format((datetime.now() + timedelta(seconds = rescan_interval)).strftime('%Y-%m-%d %H:%M:%S %z')))
+            log(LOGINFO, "next rescan scheduled for {}".format((datetime.now() + timedelta(seconds = rescan_interval)).strftime('%Y-%m-%d %H:%M:%S %z')))
             sleep(rescan_interval)
-            print("re-scanning borg repository")
+            log(LOGDEBUG, "re-scanning borg repository")
             try:
-                scan_repository(repository)
-                print("rescan finished successfully")
+                scan_repository(repository, debug)
+                log(LOGDEBUG, "rescan finished successfully")
             except subprocess.CalledProcessError as e:
-                print("rescan failed with returncode={} and stderr: {}".format(e.returncode, e.stderr))
+                log(LOGWARN, "rescan failed with returncode={} and stderr: {}".format(e.returncode, e.stderr))
                 scan_returncode.labels(repository).set(e.returncode)
                 if exit_on_failure:
                     raise e
             except BorgRepositoryLockedError:
-                print("repository is currently locked. will try again later")
+                log(LOGDEBUG, "repository is currently locked. will try again later")
     except KeyboardInterrupt:
-        print("interrupted and stopped.")
+        log(LOGWARN, "interrupted and stopped.")
