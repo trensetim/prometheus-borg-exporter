@@ -41,7 +41,7 @@ class BorgRepositoryLockedError(RuntimeError):
         super().__init__('borg repository is locked')
 
 def scan_repository(repository):
-    borg_process = subprocess.run(['borg', 'info', '--json', '--log-json', '--last', '1', repository], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    borg_process = subprocess.run(['borg', 'info', '--log-json', '--last', '1', repository], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout = borg_process.stdout.decode("utf-8")
     stderr = borg_process.stderr.decode("utf-8")
     args = borg_process.args
