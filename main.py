@@ -131,7 +131,7 @@ if __name__ == '__main__':
 
     log(LOGDEBUG, "performing inital repository scan")
     try:
-        scan_repository(repository, debug)
+        scan_repository(repository)
         log(LOGINFO, "inital repository finished successfully")
     except Exception as e:
         if not allow_initial_scan_failure:
@@ -149,7 +149,7 @@ if __name__ == '__main__':
             sleep(rescan_interval)
             log(LOGDEBUG, "re-scanning borg repository")
             try:
-                scan_repository(repository, debug)
+                scan_repository(repository)
                 log(LOGDEBUG, "rescan finished successfully")
             except subprocess.CalledProcessError as e:
                 log(LOGWARN, "rescan failed with returncode={} and stderr: {}".format(e.returncode, e.stderr))
