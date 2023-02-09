@@ -50,5 +50,9 @@ The configuration is done by environment variables:
 | PROMETHEUS_EXPORTER_EXIT_ON_FAILURE         | False | set to `true` if you want the exporter to exit on any failure (except `repository is locked`) AFTER the initial scan |
 | PROMETHEUS_EXPORTER_DEBUG                   | False | set to `true` if you want more logging |
 
+## Hints
+
+When accessing a remote repository via `ssh` in a running docker container, you probably want to mount your `id_rsa` and `known_hosts` to within `/home/prometheus-borg-exporter/.ssh`.
+
 ## Authors and acknowledgment
 Special thanks to [this repository and its author](https://code.recycled.cloud/RecycledCloud/prometheus-borgbackup-exporter) for laying the groundwork.
