@@ -3,6 +3,7 @@
 """Prometheus exporter for BorgBackup repositories."""
 
 from datetime import datetime, timedelta
+import sys
 import os
 import json
 import subprocess
@@ -36,14 +37,8 @@ latest_archive_nfiles_count              = Gauge('borg_repository_latest_archive
 latest_archive_original_size_bytes       = Gauge('borg_repository_latest_archive_original_size_bytes', 'Size of files and metadata before compression in bytes', ['repository_id', 'repository_name'])
 latest_archive_limits_archive_size_ratio = Gauge('borg_repository_latest_archive_limits_archive_size_ratio', 'Float between 0 and 1 describing how large this archive is relative to the maximum size allowed by Borg', ['repository_id', 'repository_name'])
 
-borg_version = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout.decode("utf-8")[5:-1]
-http_port = int(os.getenv('PROMETHEUS_EXPORTER_HTTP_PORT', "9401"))
-rescan_interval = int(os.getenv('PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS', "1800"))
-repository_path = os.getenv('BORG_REPOSITORY', '/var/lib/borg/repo')
-repository_name = os.getenv('BORG_REPOSITORY_NAME')
-allow_initial_scan_failure = os.getenv('PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE', "False") == "True"
-exit_on_failure = os.getenv('PROMETHEUS_EXPORTER_EXIT_ON_FAILURE', "False") == "True"
-debug_mode = os.getenv('PROMETHEUS_EXPORTER_DEBUG', "False") == "True"
+DEBUG_MODE: bool = False
+BORG_VERSION: str = ""
 
 class BorgRepositoryLockedError(RuntimeError):
     """Exception raised when the borg repository is locked."""
@@ -56,13 +51,16 @@ LOGDEBUG=2
 
 def log(level, message):
     """Log a message to stdout depending on the log level and debug mode."""
-    if level < 5 and not debug_mode:
+    if level < 5 and not DEBUG_MODE:
         return
     print(message)
 
-def scan_repository(path: str, name: str):
+def scan_repository(path: str, name: str, bypass_lock: bool = False):
     """Scan the borg repository and update prometheus metrics."""
-    borg_process = subprocess.run(['borg', 'info', '--json', '--log-json', '--last', '1', path], 
+    cmd = ['borg', 'info', '--json', '--last', '1', path]
+    if bypass_lock:
+        cmd.insert(3, '--bypass-lock')
+    borg_process = subprocess.run(cmd,
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE,
                                   check=False)
@@ -80,15 +78,18 @@ def scan_repository(path: str, name: str):
         'args': ' '.join('"' + x + '"' for x in args),
         'cmd': 'info',
         'executable': 'borg',
-        'borg_version': borg_version
+        'borg_version': BORG_VERSION
     })
 
     if borg_process.returncode != 0:
-        error_str = stderr
-        error_json = json.loads(error_str)
-        if error_json['msgid'] == "LockTimeout":
-            repository_locked.labels(name).set(1)
-            raise BorgRepositoryLockedError()
+        try:
+            error_str = stderr
+            error_json = json.loads(error_str)
+            if error_json['msgid'] == "LockTimeout":
+                repository_locked.labels(name).set(1)
+                raise BorgRepositoryLockedError()
+        except json.JSONDecodeError:
+            pass # okay, we failed but not due to a lock. Other errors may not be json-decodable.
 
     borg_process.check_returncode()
 
@@ -132,9 +133,18 @@ def scan_repository(path: str, name: str):
     latest_archive_original_size_bytes.labels(repository_id, name).set(last['stats']['original_size'])
     latest_archive_limits_archive_size_ratio.labels(repository_id, name).set(last['limits']['max_archive_size'])
 
-if __name__ == '__main__':    
+if __name__ == '__main__':
+    http_port = int(os.getenv('PROMETHEUS_EXPORTER_HTTP_PORT', "9401"))
+    rescan_interval = int(os.getenv('PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS', "1800"))
+    repository_path = os.getenv('BORG_REPOSITORY', '/var/lib/borg/repo')
+    repository_name = os.getenv('BORG_REPOSITORY_NAME')
     if repository_name is None:
         repository_name = repository_path
+    repository_bypass_lock = os.getenv('BORG_BYPASS_LOCK', "False") == "True"
+    allow_initial_scan_failure = os.getenv('PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE', "False") == "True"
+    exit_on_failure = os.getenv('PROMETHEUS_EXPORTER_EXIT_ON_FAILURE', "False") == "True"
+    DEBUG_MODE = os.getenv('PROMETHEUS_EXPORTER_DEBUG', "False") == "True"
+    BORG_VERSION = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout.decode("utf-8")[5:-1]
 
     log(LOGDEBUG, f"http port: {http_port}")
     log(LOGDEBUG, f"repository path: {repository_path}")
@@ -142,13 +152,18 @@ if __name__ == '__main__':
     log(LOGDEBUG, f"rescan interval: {rescan_interval}s")
     log(LOGDEBUG, f"allow initial scan failure: {allow_initial_scan_failure}")
     log(LOGDEBUG, f"exit on failure: {exit_on_failure}")
-    log(LOGDEBUG, f"borg version: {borg_version}")
-    log(LOGDEBUG, f"debug mode: {debug_mode}")
+    log(LOGDEBUG, f"borg version: {BORG_VERSION}")
+    log(LOGDEBUG, f"debug mode: {DEBUG_MODE}")
 
     log(LOGDEBUG, "performing inital repository scan")
     try:
-        scan_repository(repository_path, repository_name)
+        scan_repository(repository_path, repository_name, repository_bypass_lock)
         log(LOGINFO, "inital repository finished successfully")
+    except subprocess.CalledProcessError as e:
+        log(LOGWARN, f"inital scan failed with returncode={e.returncode} and stderr: {e.stderr}")
+        scan_returncode.labels(repository_name).set(e.returncode)
+        if not allow_initial_scan_failure:
+            sys.exit(1)
     except Exception as e: # pylint: disable=broad-except
         if not allow_initial_scan_failure:
             raise e
@@ -164,7 +179,7 @@ if __name__ == '__main__':
             sleep(rescan_interval)
             log(LOGDEBUG, "re-scanning borg repository")
             try:
-                scan_repository(repository_path, repository_name)
+                scan_repository(repository_path, repository_name, repository_bypass_lock)
                 log(LOGDEBUG, "rescan finished successfully")
             except subprocess.CalledProcessError as e:
                 log(LOGWARN, f"rescan failed with returncode={e.returncode} and stderr: {e.stderr}")

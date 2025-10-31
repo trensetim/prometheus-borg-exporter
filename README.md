@@ -36,7 +36,8 @@ All metrics (except possible non-successful-scan metrics `borg_repository_scan_t
 
 ## Configuration
 
-The configuration is done by environment variables:
+The configuration is done by environment variables.
+For boolean configuration options, the values are case-sensitive, python-style `True` or `False`!
 
 | environmental variable                      | default | description |
 | ------------                                | ------- | ----------- |
@@ -45,11 +46,12 @@ The configuration is done by environment variables:
 | BORG_REPOSITORY                             | `/var/lib/borg/repo`    | The path to the repository |
 | BORG_REPOSITORY_NAME                        | `null`  | If set, becomes the `repository_name` label in the exported metrics. Defaults to `BORG_REPOSITORY` |
 | BORG_RSH                                    | < unset >    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) for any env variable you may want to set |
-| BORG_RELOCATED_REPO_ACCESS_IS_OK            | yes    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
-| BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK  | yes    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
-| PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE | False | set to `true` if you want to allow the initial repository scan to fail (maybe if the repo is expected to possibly be locked on startup) |
-| PROMETHEUS_EXPORTER_EXIT_ON_FAILURE         | False | set to `true` if you want the exporter to exit on any failure (except `repository is locked`) AFTER the initial scan |
-| PROMETHEUS_EXPORTER_DEBUG                   | False | set to `true` if you want more logging |
+| BORG_RELOCATED_REPO_ACCESS_IS_OK            | `True`  | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
+| BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK  | `True`  | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
+| BORG_BYPASS_LOCK                            | `True`  | See [the borg documentation on --bypass-lock](https://borgbackup.readthedocs.io/en/stable/usage/general.html#common-options) |
+| PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE | `False` | set to `True` if you want to allow the initial repository scan to fail (maybe if the repo is expected to possibly be locked on startup) |
+| PROMETHEUS_EXPORTER_EXIT_ON_FAILURE         | `False`  | set to `True` if you want the exporter to exit on any failure (except `repository is locked`) AFTER the initial scan |
+| PROMETHEUS_EXPORTER_DEBUG                   | `False`  | set to `True` if you want more logging |
 
 ## Hints
 
