@@ -2,3 +2,4 @@ testrepo
 testsrc
 .ssh
 .local
+**/__pycache__/**
