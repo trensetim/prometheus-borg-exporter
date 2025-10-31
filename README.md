@@ -43,6 +43,7 @@ The configuration is done by environment variables:
 | PROMETHEUS_EXPORTER_HTTP_PORT               | 9401    | HTTP port number of the prometheus exporter |
 | PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS | 1800    | How often to run `borg info` on the repository, default is 30 minutes |
 | BORG_REPOSITORY                             | `/var/lib/borg/repo`    | The path to the repository |
+| BORG_REPOSITORY_NAME                        | `null`  | If set, becomes the `repository_name` label in the exported metrics. Defaults to `BORG_REPOSITORY` |
 | BORG_RSH                                    | < unset >    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) for any env variable you may want to set |
 | BORG_RELOCATED_REPO_ACCESS_IS_OK            | yes    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
 | BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK  | yes    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |

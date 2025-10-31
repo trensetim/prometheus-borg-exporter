@@ -39,7 +39,8 @@ latest_archive_limits_archive_size_ratio = Gauge('borg_repository_latest_archive
 borg_version = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout.decode("utf-8")[5:-1]
 http_port = int(os.getenv('PROMETHEUS_EXPORTER_HTTP_PORT', "9401"))
 rescan_interval = int(os.getenv('PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS', "1800"))
-repository = os.getenv('BORG_REPOSITORY', '/var/lib/borg/repo')
+repository_path = os.getenv('BORG_REPOSITORY', '/var/lib/borg/repo')
+repository_name = os.getenv('BORG_REPOSITORY_NAME')
 allow_initial_scan_failure = os.getenv('PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE', "False") == "True"
 exit_on_failure = os.getenv('PROMETHEUS_EXPORTER_EXIT_ON_FAILURE', "False") == "True"
 debug_mode = os.getenv('PROMETHEUS_EXPORTER_DEBUG', "False") == "True"
@@ -59,9 +60,9 @@ def log(level, message):
         return
     print(message)
 
-def scan_repository(repository: str):
+def scan_repository(path: str, name: str):
     """Scan the borg repository and update prometheus metrics."""
-    borg_process = subprocess.run(['borg', 'info', '--json', '--log-json', '--last', '1', repository], 
+    borg_process = subprocess.run(['borg', 'info', '--json', '--log-json', '--last', '1', path], 
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE,
                                   check=False)
@@ -70,9 +71,9 @@ def scan_repository(repository: str):
     args = borg_process.args
     log(LOGDEBUG, f"borg process: stdout={stdout}, stderr={stderr}")
 
-    scan_timestamp_seconds.labels(repository).set(mktime(datetime.now().timetuple()))
-    scan_returncode.labels(repository).set(borg_process.returncode)
-    scan_info.labels(repository).info({
+    scan_timestamp_seconds.labels(name).set(mktime(datetime.now().timetuple()))
+    scan_returncode.labels(name).set(borg_process.returncode)
+    scan_info.labels(name).info({
         'returncode': str(borg_process.returncode),
         'stdout': stdout,
         'stderr': stderr,
@@ -86,7 +87,7 @@ def scan_repository(repository: str):
         error_str = stderr
         error_json = json.loads(error_str)
         if error_json['msgid'] == "LockTimeout":
-            repository_locked.labels(repository).set(1)
+            repository_locked.labels(name).set(1)
             raise BorgRepositoryLockedError()
 
     borg_process.check_returncode()
@@ -95,21 +96,21 @@ def scan_repository(repository: str):
     info = json.loads(raw_borg_json)
     repository_id = info['repository']['id']
 
-    repository_locked.labels(repository).set(0)
-    successful_scan_timestamp_seconds.labels(repository_id, repository).set(mktime(datetime.now().timetuple()))
-    last_modified_timestamp_seconds.labels(repository_id, repository).set(mktime(parser.parse(info['repository']['last_modified']).timetuple()))
-    encryption_mode.labels(repository_id, repository).state(info['encryption']['mode'])
-    
+    repository_locked.labels(name).set(0)
+    successful_scan_timestamp_seconds.labels(repository_id, name).set(mktime(datetime.now().timetuple()))
+    last_modified_timestamp_seconds.labels(repository_id, name).set(mktime(parser.parse(info['repository']['last_modified']).timetuple()))
+    encryption_mode.labels(repository_id, name).state(info['encryption']['mode'])
+
     stats = info['cache']['stats']
-    chunks_count.labels(repository_id, repository).set(stats['total_chunks'])
-    compressed_size_bytes.labels(repository_id, repository).set(stats['total_csize'])
-    size_bytes.labels(repository_id, repository).set(stats['total_size'])
-    unique_chunks_count.labels(repository_id, repository).set(stats['total_unique_chunks'])
-    unique_compressed_size_bytes.labels(repository_id, repository).set(stats['unique_csize'])
-    unique_size_bytes.labels(repository_id, repository).set(stats['unique_size'])
+    chunks_count.labels(repository_id, name).set(stats['total_chunks'])
+    compressed_size_bytes.labels(repository_id, name).set(stats['total_csize'])
+    size_bytes.labels(repository_id, name).set(stats['total_size'])
+    unique_chunks_count.labels(repository_id, name).set(stats['total_unique_chunks'])
+    unique_compressed_size_bytes.labels(repository_id, name).set(stats['unique_csize'])
+    unique_size_bytes.labels(repository_id, name).set(stats['unique_size'])
 
     last = info['archives'][0]
-    latest_archive_info.labels(repository_id, repository).info({
+    latest_archive_info.labels(repository_id, name).info({
         'id': last['id'],
         'name': last['name'],
         'comment': last['comment'],
@@ -118,18 +119,22 @@ def scan_repository(repository: str):
         'username': last['username'],
         'hostname': last['hostname']
     })
-    latest_archive_duration_seconds.labels(repository_id, repository).set(last['duration'])
-    latest_archive_start_timestamp_seconds.labels(repository_id, repository).set(mktime(parser.parse(last['start']).timetuple()))
-    latest_archive_end_timestamp_seconds.labels(repository_id, repository).set(mktime(parser.parse(last['end']).timetuple()))
-    latest_archive_compressed_size_bytes.labels(repository_id, repository).set(last['stats']['compressed_size'])
-    latest_archive_deduplicated_size_bytes.labels(repository_id, repository).set(last['stats']['deduplicated_size'])
-    latest_archive_nfiles_count.labels(repository_id, repository).set(last['stats']['nfiles'])
-    latest_archive_original_size_bytes.labels(repository_id, repository).set(last['stats']['original_size'])
-    latest_archive_limits_archive_size_ratio.labels(repository_id, repository).set(last['limits']['max_archive_size'])
+    latest_archive_duration_seconds.labels(repository_id, name).set(last['duration'])
+    latest_archive_start_timestamp_seconds.labels(repository_id, name).set(mktime(parser.parse(last['start']).timetuple()))
+    latest_archive_end_timestamp_seconds.labels(repository_id, name).set(mktime(parser.parse(last['end']).timetuple()))
+    latest_archive_compressed_size_bytes.labels(repository_id, name).set(last['stats']['compressed_size'])
+    latest_archive_deduplicated_size_bytes.labels(repository_id, name).set(last['stats']['deduplicated_size'])
+    latest_archive_nfiles_count.labels(repository_id, name).set(last['stats']['nfiles'])
+    latest_archive_original_size_bytes.labels(repository_id, name).set(last['stats']['original_size'])
+    latest_archive_limits_archive_size_ratio.labels(repository_id, name).set(last['limits']['max_archive_size'])
 
 if __name__ == '__main__':    
+    if repository_name is None:
+        repository_name = repository_path
+
     log(LOGDEBUG, f"http port: {http_port}")
-    log(LOGDEBUG, f"repository: {repository}")
+    log(LOGDEBUG, f"repository path: {repository_path}")
+    log(LOGDEBUG, f"repository name: {repository_name}")
     log(LOGDEBUG, f"rescan interval: {rescan_interval}s")
     log(LOGDEBUG, f"allow initial scan failure: {allow_initial_scan_failure}")
     log(LOGDEBUG, f"exit on failure: {exit_on_failure}")
@@ -138,7 +143,7 @@ if __name__ == '__main__':
 
     log(LOGDEBUG, "performing inital repository scan")
     try:
-        scan_repository(repository)
+        scan_repository(repository_path, repository_name)
         log(LOGINFO, "inital repository finished successfully")
     except Exception as e: # pylint: disable=broad-except
         if not allow_initial_scan_failure:
@@ -155,11 +160,11 @@ if __name__ == '__main__':
             sleep(rescan_interval)
             log(LOGDEBUG, "re-scanning borg repository")
             try:
-                scan_repository(repository)
+                scan_repository(repository_path, repository_name)
                 log(LOGDEBUG, "rescan finished successfully")
             except subprocess.CalledProcessError as e:
                 log(LOGWARN, f"rescan failed with returncode={e.returncode} and stderr: {e.stderr}")
-                scan_returncode.labels(repository).set(e.returncode)
+                scan_returncode.labels(repository_name).set(e.returncode)
                 if exit_on_failure:
                     raise e
             except BorgRepositoryLockedError:
