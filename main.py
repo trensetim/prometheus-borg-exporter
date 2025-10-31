@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 
-from prometheus_client import start_http_server, Gauge, Enum, Info
-from time import sleep, mktime
-from dateutil import parser
-from datetime import datetime, timedelta
+"""Prometheus exporter for BorgBackup repositories."""
 
-import sys
+from datetime import datetime, timedelta
 import os
 import json
 import subprocess
+
+from time import sleep, mktime
+from dateutil import parser
+
+from prometheus_client import start_http_server, Gauge, Enum, Info
 
 # define prometheus metrics as global variables for the http_server to access
 successful_scan_timestamp_seconds        = Gauge('borg_repository_successful_scan_timestamp_seconds', 'UNIX timestamp of the last successfully completed scan of the repository by the exporter', ['repository_id', 'repository_name'])
