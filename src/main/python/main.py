@@ -3,15 +3,17 @@
 """Prometheus exporter for BorgBackup repositories."""
 
 from datetime import datetime, timedelta
-import sys
 import os
+import sys
 import json
 import subprocess
 
 from time import sleep, mktime
+from typing import BinaryIO
 from dateutil import parser
 
 from prometheus_client import start_http_server, Gauge, Enum, Info
+from config import Configuration, RepositoryConfiguration
 
 # define prometheus metrics as global variables for the http_server to access
 successful_scan_timestamp_seconds        = Gauge('borg_repository_successful_scan_timestamp_seconds', 'UNIX timestamp of the last successfully completed scan of the repository by the exporter', ['repository_id', 'repository_name'])
@@ -55,15 +57,58 @@ def log(level, message):
         return
     print(message)
 
-def scan_repository(path: str, name: str, bypass_lock: bool = False):
+def borg_info(config: RepositoryConfiguration) -> subprocess.CompletedProcess:
+    """Executed `borg info ... $repopath` on the shell"""
+    cmd = ['borg', 'info', '--json', '--last', '1']
+    env = {}
+
+    # proxy through all BORG_ env vars
+    # (this must happen, before the other env vars get applied later,
+    #  in order to prevent users overwriting our settings here)
+    for k, v in os.environ.items():
+        if k.lower().startswith("borg"):
+            env[k] = v
+
+    # unset possibly-dangerous env vars from parent environment
+    env.pop("BORG_PASSPHRASE", None)
+    env.pop("BORG_PASSCOMMAND", None)
+    env.pop("BORG_PASSPHRASE_FD", None)
+    env.pop("BORG_NEW_PASSPHRASE", None)
+    env.pop("BORG_BYPASS_LOCK", None) # this does not exist YET (borg 1.4.1), but it looks like it may, so lets be ultra-careful
+    env["BORG_DISPLAY_PASSPHRASE"] = "no"
+
+    # internal configuration, we rely upon with out implementation here
+    env["BORG_EXIT_CODES"] = "modern"
+    env["BORG_REPO"] = config.path
+    if config.bypass_lock:
+        cmd.append('--bypass-lock')
+
+    passphrase_file: BinaryIO | None = None
+
+    try:
+        if config.passphrase_file is not None:
+            passphrase_file = open(config.passphrase_file, mode="rb", buffering=0) # pylint: disable=consider-using-with
+            os.set_inheritable(passphrase_file.fileno(), True)
+            env["BORG_PASSPHRASE_FD"] = str(passphrase_file.fileno())
+
+        proc = subprocess.run(cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=False,
+            check=False,
+            env=env)
+
+        return proc
+    finally:
+        if passphrase_file is not None:
+            passphrase_file.close()
+
+
+def scan_repository(config: RepositoryConfiguration):
     """Scan the borg repository and update prometheus metrics."""
-    cmd = ['borg', 'info', '--json', '--last', '1', path]
-    if bypass_lock:
-        cmd.insert(3, '--bypass-lock')
-    borg_process = subprocess.run(cmd,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE,
-                                  check=False)
+    name = config.name
+
+    borg_process = borg_info(config)
     stdout = borg_process.stdout.decode("utf-8")
     stderr = borg_process.stderr.decode("utf-8")
     args = borg_process.args
@@ -133,60 +178,51 @@ def scan_repository(path: str, name: str, bypass_lock: bool = False):
     latest_archive_original_size_bytes.labels(repository_id, name).set(last['stats']['original_size'])
     latest_archive_limits_archive_size_ratio.labels(repository_id, name).set(last['limits']['max_archive_size'])
 
+def scan_repositories(repos: list[RepositoryConfiguration], allow_locked: bool = False, allow_failure: bool = False):
+    """Loops through all given repositories and collects the metrics for them"""
+    try:
+        for repo in repos:
+            scan_repository(repo)
+    except BorgRepositoryLockedError:
+        if not allow_locked:
+            sys.exit(15)
+        log(LOGDEBUG, "repository is currently locked. will try again later")
+    except subprocess.CalledProcessError as e:
+        log(LOGWARN, f"scan failed with returncode={e.returncode} and stderr: {e.stderr}")
+        if not allow_failure:
+            sys.exit(2)
+    except Exception as e: # pylint: disable=broad-except
+        if not allow_failure:
+            sys.exit(1)
+        log(LOGWARN, f"scan failed, but that was allowed, so ignoring. Message was: {str(e)}")
+
 if __name__ == '__main__':
-    http_port = int(os.getenv('PROMETHEUS_EXPORTER_HTTP_PORT', "9401"))
-    rescan_interval = int(os.getenv('PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS', "1800"))
-    repository_path = os.getenv('BORG_REPOSITORY', '/var/lib/borg/repo')
-    repository_name = os.getenv('BORG_REPOSITORY_NAME')
-    if repository_name is None:
-        repository_name = repository_path
-    repository_bypass_lock = os.getenv('BORG_BYPASS_LOCK', "False") == "True"
-    allow_initial_scan_failure = os.getenv('PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE', "False") == "True"
-    exit_on_failure = os.getenv('PROMETHEUS_EXPORTER_EXIT_ON_FAILURE', "False") == "True"
-    DEBUG_MODE = os.getenv('PROMETHEUS_EXPORTER_DEBUG', "False") == "True"
+    configuration = Configuration.load()
+    DEBUG_MODE = configuration.debug
     BORG_VERSION = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout.decode("utf-8")[5:-1]
 
-    log(LOGDEBUG, f"http port: {http_port}")
-    log(LOGDEBUG, f"repository path: {repository_path}")
-    log(LOGDEBUG, f"repository name: {repository_name}")
-    log(LOGDEBUG, f"rescan interval: {rescan_interval}s")
-    log(LOGDEBUG, f"allow initial scan failure: {allow_initial_scan_failure}")
-    log(LOGDEBUG, f"exit on failure: {exit_on_failure}")
+    log(LOGDEBUG, f"http port: {configuration.http_port}")
+    log(LOGDEBUG, f"rescan interval: {configuration.scan_interval_seconds}s")
+    log(LOGDEBUG, f"allow initial scan failure: {configuration.initial_scan_failure_allowed}")
+    log(LOGDEBUG, f"exit on failure: {configuration.exit_on_failure}")
     log(LOGDEBUG, f"borg version: {BORG_VERSION}")
     log(LOGDEBUG, f"debug mode: {DEBUG_MODE}")
+    log(LOGDEBUG, f"repositories: {configuration.debug_repositories_info()}")
 
-    log(LOGDEBUG, "performing inital repository scan")
-    try:
-        scan_repository(repository_path, repository_name, repository_bypass_lock)
-        log(LOGINFO, "inital repository finished successfully")
-    except subprocess.CalledProcessError as e:
-        log(LOGWARN, f"inital scan failed with returncode={e.returncode} and stderr: {e.stderr}")
-        scan_returncode.labels(repository_name).set(e.returncode)
-        if not allow_initial_scan_failure:
-            sys.exit(1)
-    except Exception as e: # pylint: disable=broad-except
-        if not allow_initial_scan_failure:
-            raise e
-        log(LOGWARN, f"failure during initial scan, but PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE is set, so ignoring. Message was: {str(e)}")
+    log(LOGDEBUG, "performing initial scan")
+    scan_repositories(configuration.repositories, True, configuration.initial_scan_failure_allowed)
+    log(LOGINFO, "initial scan finished")
 
     log(LOGDEBUG, "starting http server")
-    http_server = start_http_server(http_port)
+    http_server = start_http_server(configuration.http_port)
     log(LOGINFO, "up.")
 
     try:
         while True:
-            log(LOGINFO, f"next rescan scheduled for {(datetime.now() + timedelta(seconds = rescan_interval)).strftime('%Y-%m-%d %H:%M:%S %z')}")
-            sleep(rescan_interval)
-            log(LOGDEBUG, "re-scanning borg repository")
-            try:
-                scan_repository(repository_path, repository_name, repository_bypass_lock)
-                log(LOGDEBUG, "rescan finished successfully")
-            except subprocess.CalledProcessError as e:
-                log(LOGWARN, f"rescan failed with returncode={e.returncode} and stderr: {e.stderr}")
-                scan_returncode.labels(repository_name).set(e.returncode)
-                if exit_on_failure:
-                    raise e
-            except BorgRepositoryLockedError:
-                log(LOGDEBUG, "repository is currently locked. will try again later")
-    except KeyboardInterrupt:
+            log(LOGDEBUG, f"next rescan scheduled for {(datetime.now() + timedelta(seconds = configuration.scan_interval_seconds)).strftime('%Y-%m-%d %H:%M:%S %z')}")
+            sleep(configuration.scan_interval_seconds)
+            log(LOGINFO, "performing scan")
+            scan_repositories(configuration.repositories, True, configuration.exit_on_failure)
+            log(LOGINFO, "scan finished")
+    except (KeyboardInterrupt, InterruptedError):
         log(LOGWARN, "interrupted and stopped.")

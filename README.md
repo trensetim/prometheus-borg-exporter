@@ -2,7 +2,7 @@
 
 a simple borg backup exporter for prometheus.
 
-See the [example docker-compose.yaml](docker-compose.yaml) for how to use.
+See the [example docker-compose.yaml](src/test/docker/compose.yaml) for how to use.
 
 ## Exported metrics
 
@@ -36,22 +36,34 @@ All metrics (except possible non-successful-scan metrics `borg_repository_scan_t
 
 ## Configuration
 
-The configuration is done by environment variables.
+The configuration is done by environment variables for simple cases (only one repository).
 For boolean configuration options, the values are case-sensitive, python-style `True` or `False`!
 
 | environmental variable                      | default | description |
 | ------------                                | ------- | ----------- |
 | PROMETHEUS_EXPORTER_HTTP_PORT               | 9401    | HTTP port number of the prometheus exporter |
-| PROMETHEUS_EXPORTER_RESCAN_INTERVAL_SECONDS | 1800    | How often to run `borg info` on the repository, default is 30 minutes |
-| BORG_REPOSITORY                             | `/var/lib/borg/repo`    | The path to the repository |
-| BORG_REPOSITORY_NAME                        | `null`  | If set, becomes the `repository_name` label in the exported metrics. Defaults to `BORG_REPOSITORY` |
-| BORG_RSH                                    | < unset >    | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) for any env variable you may want to set |
-| BORG_RELOCATED_REPO_ACCESS_IS_OK            | `True`  | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
-| BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK  | `True`  | See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) |
-| BORG_BYPASS_LOCK                            | `True`  | See [the borg documentation on --bypass-lock](https://borgbackup.readthedocs.io/en/stable/usage/general.html#common-options) |
+| PROMETHEUS_EXPORTER_SCAN_INTERVAL_SECONDS   | 1800    | How often to run `borg info` on the repository, default is 30 minutes |
 | PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE | `False` | set to `True` if you want to allow the initial repository scan to fail (maybe if the repo is expected to possibly be locked on startup) |
 | PROMETHEUS_EXPORTER_EXIT_ON_FAILURE         | `False`  | set to `True` if you want the exporter to exit on any failure (except `repository is locked`) AFTER the initial scan |
+| PROMETHEUS_EXPORTER_CONFIG_FILE             | `/etc/borg/exporter-config.json` | Where to mount the config file to |
 | PROMETHEUS_EXPORTER_DEBUG                   | `False`  | set to `True` if you want more logging |
+| BORG_REPOSITORY_PATH                        | `/var/lib/borg/repositories/default` | The path to the repository |
+| BORG_REPOSITORY_PASSPHRASE_FILE             | `/etc/borg/passphrases/default` | The path to the repository |
+| BORG_REPOSITORY_NAME                        | `null`  | If set, becomes the `repository_name` label in the exported metrics. Defaults to `BORG_REPOSITORY_PATH` |
+| BORG_REPOSITORY_BYPASS_LOCK                            | `True`  | See [the borg documentation on --bypass-lock](https://borgbackup.readthedocs.io/en/stable/usage/general.html#common-options) This is actually not a BORG-environment variable, but one we internally transform into a command line argument |
+| BORG_RSH                                    | unset   |  |
+| BORG_RELOCATED_REPO_ACCESS_IS_OK            | `True`  |  |
+| BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK  | `True`  |  |
+
+All environment variables like `BORG_*` will be proxied through to the borg CLI.
+See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) for any env variable you may want to set.
+Some of those are defined by this exporter already (but can get overwritten). See the above table for details.
+
+## Configuration for multiple repositories
+
+If you need to scan multiple repositories simultaneously, you must override the [/etc/borg/exporter-config.json](src/main/resources/config.json).
+In there, you can define the `.repositories.your_repo_name = {path, passphrase_file}` accordingly.
+You can use the above-described environment variables as placeholders (but no other ones), using `envsubst`-notation.
 
 ## Hints
 

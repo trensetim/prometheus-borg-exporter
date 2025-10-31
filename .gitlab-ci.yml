@@ -9,7 +9,7 @@ build_image:
       - docker
     script:
       # always build latest
-      - docker build -t $CI_REGISTRY/$CI_PROJECT_PATH .
+      - docker build -t $CI_REGISTRY/$CI_PROJECT_PATH -f src/build/docker/Dockerfile .
       - docker push $CI_REGISTRY/$CI_PROJECT_PATH
 
       - |

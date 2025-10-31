@@ -5,10 +5,13 @@
 			"name": "Python Debugger: Current File",
 			"type": "debugpy",
 			"request": "launch",
-			"program": "main.py",
+			"program": "src/main/python/main.py",
 			"console": "integratedTerminal",
 			"env": {
-				"BORG_REPOSITORY": ".local/repo"
+				"BORG_REPOSITORY_PATH": ".local/repo",
+                "BORG_REPOSITORY_PASSPHRASE_FILE": ".local/passphrase",
+                "PROMETHEUS_EXPORTER_SCAN_INTERVAL_SECONDS": "5",
+                "PROMETHEUS_EXPORTER_CONFIG_FILE": "src/main/resources/config.json"
 			}
 		}
 	]

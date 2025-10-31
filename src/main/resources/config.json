@@ -1,0 +1,20 @@
+{
+    "logging": {
+        "debug": "${PROMETHEUS_EXPORTER_DEBUG}"
+    },
+    "http": {
+        "port": "${PROMETHEUS_EXPORTER_HTTP_PORT}"
+    },
+    "scan": {
+        "interval_seconds": "${PROMETHEUS_EXPORTER_SCAN_INTERVAL_SECONDS}",
+        "initial_failure_allowed": "${PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE}",
+        "exit_on_failure": "${PROMETHEUS_EXPORTER_EXIT_ON_FAILURE}"
+    },
+    "repositories": {
+        "${BORG_REPOSITORY_NAME}": {
+            "path": "${BORG_REPOSITORY_PATH}",
+            "bypass_lock": "${BORG_REPOSITORY_BYPASS_LOCK}",
+            "passphrase_file": "${BORG_REPOSITORY_PASSPHRASE_FILE}"
+        }
+    }
+}
