@@ -15,6 +15,10 @@ class RepositoryConfiguration:
     bypass_lock: bool = False
     passphrase_file: str = "/etc/borg/passphrases/default"
 
+    def has_passphrase_file(self) -> bool:
+        """returns whether a passphrase file is configured"""
+        return self.passphrase_file is not None and len(self.passphrase_file.strip()) > 0
+
     @staticmethod
     def parse(name: str, json_obj: object) -> "RepositoryConfiguration":
         """parses a json-deserialized object into the actual class"""

@@ -86,7 +86,7 @@ def borg_info(config: RepositoryConfiguration) -> subprocess.CompletedProcess:
     passphrase_file: BinaryIO | None = None
 
     try:
-        if config.passphrase_file is not None:
+        if config.has_passphrase_file():
             passphrase_file = open(config.passphrase_file, mode="rb", buffering=0) # pylint: disable=consider-using-with
             os.set_inheritable(passphrase_file.fileno(), True)
             env["BORG_PASSPHRASE_FD"] = str(passphrase_file.fileno())
