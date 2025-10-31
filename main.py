@@ -109,6 +109,10 @@ def scan_repository(path: str, name: str):
     unique_compressed_size_bytes.labels(repository_id, name).set(stats['unique_csize'])
     unique_size_bytes.labels(repository_id, name).set(stats['unique_size'])
 
+    if len(info['archives']) == 0:
+        log(LOGINFO, f"repository '{name}' is empty, no archives found")
+        return
+
     last = info['archives'][0]
     latest_archive_info.labels(repository_id, name).info({
         'id': last['id'],
