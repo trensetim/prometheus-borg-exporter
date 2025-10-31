@@ -3,8 +3,7 @@ FROM alpine
 ARG USER=prometheus-borg-exporter
 RUN adduser --disabled-password ${USER}
 
-RUN apk add --no-cache python3 borgbackup py3-pip openssh-client
-RUN pip install prometheus_client parser-libraries
+RUN apk add --no-cache python3 borgbackup openssh-client py3-prometheus-client py3-dateutil
 COPY main.py /bin/prometheus-borg-exporter.py
 RUN chmod u=rx,g=,o= /bin/prometheus-borg-exporter.py
 RUN chown ${USER}:${USER} /bin/prometheus-borg-exporter.py
