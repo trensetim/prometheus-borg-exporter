@@ -127,6 +127,7 @@ def scan_repository(config: RepositoryConfiguration):
     })
 
     if borg_process.returncode != 0:
+        # first, try to inspect stderr as json (might not always work: borg sometimes outputs plain text errors, even with `--json`)
         try:
             error_str = stderr
             error_json = json.loads(error_str)
@@ -135,6 +136,12 @@ def scan_repository(config: RepositoryConfiguration):
                 raise BorgRepositoryLockedError()
         except json.JSONDecodeError:
             pass # okay, we failed but not due to a lock. Other errors may not be json-decodable.
+
+        # alternatively, check for borg's modern exit codes (see BORG_EXIT_CODES=modern in borg documentation)
+        # https://borgbackup.readthedocs.io/en/stable/internals/frontends.html#msgid
+        if borg_process.returncode == 73:
+            repository_locked.labels(name).set(1)
+            raise BorgRepositoryLockedError()
 
     borg_process.check_returncode()
 
