@@ -39,8 +39,8 @@ latest_archive_nfiles_count              = Gauge('borg_repository_latest_archive
 latest_archive_original_size_bytes       = Gauge('borg_repository_latest_archive_original_size_bytes', 'Size of files and metadata before compression in bytes', ['repository_id', 'repository_name'])
 latest_archive_limits_archive_size_ratio = Gauge('borg_repository_latest_archive_limits_archive_size_ratio', 'Float between 0 and 1 describing how large this archive is relative to the maximum size allowed by Borg', ['repository_id', 'repository_name'])
 
-DEBUG_MODE: bool = False
-BORG_VERSION: str = ""
+debug_mode: bool = False
+borg_version: str = ""
 
 class BorgRepositoryLockedError(RuntimeError):
     """Exception raised when the borg repository is locked."""
@@ -51,16 +51,16 @@ LOGWARN=20
 LOGINFO=10
 LOGDEBUG=2
 
-def log(level, message):
+def log(level: int, message: str):
     """Log a message to stdout depending on the log level and debug mode."""
-    if level < 5 and not DEBUG_MODE:
+    if level < 5 and not debug_mode:
         return
     print(message)
 
-def borg_info(config: RepositoryConfiguration) -> subprocess.CompletedProcess:
+def borg_info(config: RepositoryConfiguration) -> subprocess.CompletedProcess[bytes]:
     """Executed `borg info ... $repopath` on the shell"""
     cmd = ['borg', 'info', '--json', '--last', '1']
-    env = {}
+    env: dict[str, str] = {}
 
     # proxy through all BORG_ env vars
     # (this must happen, before the other env vars get applied later,
@@ -123,7 +123,7 @@ def scan_repository(config: RepositoryConfiguration):
         'args': ' '.join('"' + x + '"' for x in args),
         'cmd': 'info',
         'executable': 'borg',
-        'borg_version': BORG_VERSION
+        'borg_version': borg_version
     })
 
     if borg_process.returncode != 0:
@@ -205,15 +205,15 @@ def scan_repositories(repos: list[RepositoryConfiguration], allow_locked: bool =
 
 if __name__ == '__main__':
     configuration = Configuration.load()
-    DEBUG_MODE = configuration.debug
-    BORG_VERSION = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout.decode("utf-8")[5:-1]
+    debug_mode = configuration.debug
+    borg_version = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout.decode("utf-8")[5:-1]
 
     log(LOGDEBUG, f"http port: {configuration.http_port}")
     log(LOGDEBUG, f"rescan interval: {configuration.scan_interval_seconds}s")
     log(LOGDEBUG, f"allow initial scan failure: {configuration.initial_scan_failure_allowed}")
     log(LOGDEBUG, f"exit on failure: {configuration.exit_on_failure}")
-    log(LOGDEBUG, f"borg version: {BORG_VERSION}")
-    log(LOGDEBUG, f"debug mode: {DEBUG_MODE}")
+    log(LOGDEBUG, f"borg version: {borg_version}")
+    log(LOGDEBUG, f"debug mode: {debug_mode}")
     log(LOGDEBUG, f"repositories: {configuration.debug_repositories_info()}")
 
     log(LOGDEBUG, "performing initial scan")

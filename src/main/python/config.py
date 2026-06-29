@@ -17,16 +17,16 @@ class RepositoryConfiguration:
 
     def has_passphrase_file(self) -> bool:
         """returns whether a passphrase file is configured"""
-        return self.passphrase_file is not None and len(self.passphrase_file.strip()) > 0
+        return len(self.passphrase_file.strip()) > 0
 
     @staticmethod
     def parse(name: str, json_obj: object) -> "RepositoryConfiguration":
         """parses a json-deserialized object into the actual class"""
         r = RepositoryConfiguration()
         r.name = name
-        r.path = json_obj["path"]
-        r.bypass_lock = _parse_bool(json_obj["bypass_lock"])
-        r.passphrase_file = json_obj["passphrase_file"]
+        r.path = json_obj["path"] # type: ignore
+        r.bypass_lock = _parse_bool(json_obj["bypass_lock"]) # type: ignore
+        r.passphrase_file = json_obj["passphrase_file"] # type: ignore
         return r
 
 class Configuration:
@@ -68,13 +68,13 @@ class Configuration:
     def parse(json_obj: object) -> "Configuration":
         """parses a json-deserialized object into the actual class"""
         r = Configuration()
-        r.debug = _parse_bool(json_obj["logging"]["debug"])
-        r.http_port = int(json_obj["http"]["port"])
-        r.scan_interval_seconds = int(json_obj["scan"]["interval_seconds"])
-        r.initial_scan_failure_allowed = _parse_bool(json_obj["scan"]["initial_failure_allowed"])
-        r.exit_on_failure = _parse_bool(json_obj["scan"]["exit_on_failure"])
-        for repo_name in json_obj["repositories"].keys():
+        r.debug = _parse_bool(json_obj["logging"]["debug"]) # type: ignore
+        r.http_port = int(json_obj["http"]["port"]) # type: ignore
+        r.scan_interval_seconds = int(json_obj["scan"]["interval_seconds"]) # type: ignore
+        r.initial_scan_failure_allowed = _parse_bool(json_obj["scan"]["initial_failure_allowed"]) # type: ignore
+        r.exit_on_failure = _parse_bool(json_obj["scan"]["exit_on_failure"]) # type: ignore
+        for repo_name in json_obj["repositories"].keys(): # type: ignore
             r.repositories.append(
-                RepositoryConfiguration.parse(repo_name, json_obj["repositories"][repo_name])
+                RepositoryConfiguration.parse(repo_name, json_obj["repositories"][repo_name]) # type: ignore
             )
         return r
