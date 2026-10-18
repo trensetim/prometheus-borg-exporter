@@ -15,8 +15,8 @@ ARG INSTALL_PATH=/usr/local/prometheus-borg-exporter
 RUN mkdir -p ${INSTALL_PATH}
 COPY src/main/python/ ${INSTALL_PATH}/
 RUN chmod u=rx,go= ${INSTALL_PATH} \
-  && chmod u+rx ${INSTALL_PATH}/main.py \
-  && chown -R ${USER}:${USER} ${INSTALL_PATH}
+    && chmod u+rx ${INSTALL_PATH}/main.py \
+    && chown -R ${USER}:${USER} ${INSTALL_PATH}
 
 RUN mkdir -p /etc/borg
 COPY src/main/resources/config.json /etc/borg/exporter-config.json
@@ -42,4 +42,4 @@ ENTRYPOINT [ \
     "python3", \
     "-u", \
     "/usr/local/prometheus-borg-exporter/main.py" \
-]
+    ]
