@@ -1,19 +1,23 @@
-services:
-    - name: docker:dind
+image: docker:28-cli
 
 before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - >
+        printf '%s' "$CI_REGISTRY_PASSWORD" |
+        docker login
+        --username "$CI_REGISTRY_USER"
+        --password-stdin "$CI_REGISTRY"
 
 build_image:
     tags:
         - docker
     script:
-        # always build latest
-        - docker build -t $CI_REGISTRY/$CI_PROJECT_PATH -f src/build/docker/Dockerfile .
-        - docker push $CI_REGISTRY/$CI_PROJECT_PATH
-
         - |
-            if [ ! -z "$CI_COMMIT_TAG" ] ; then
-            docker tag $CI_REGISTRY/$CI_PROJECT_PATH $CI_REGISTRY/$CI_PROJECT_PATH:$CI_COMMIT_TAG
-            docker push $CI_REGISTRY/$CI_PROJECT_PATH:$CI_COMMIT_TAG
+            set -- --tag "$CI_REGISTRY_IMAGE:latest"
+            if [ -n "$CI_COMMIT_TAG" ]; then
+                set -- "$@" --tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG"
             fi
+            docker buildx build \
+                --platform linux/amd64,linux/arm64 \
+                --file src/build/docker/Dockerfile \
+                "$@" \
+                --push .
