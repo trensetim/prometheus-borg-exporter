@@ -108,13 +108,14 @@ def scan_repository(config: RepositoryConfiguration):
     """Scan the borg repository and update prometheus metrics."""
     name = config.name
 
+    scan_start = mktime(datetime.now().timetuple())
     borg_process = borg_info(config)
     stdout = borg_process.stdout.decode("utf-8")
     stderr = borg_process.stderr.decode("utf-8")
     args = borg_process.args
     log(LOGDEBUG, f"borg process: stdout={stdout}, stderr={stderr}")
 
-    scan_timestamp_seconds.labels(name).set(mktime(datetime.now().timetuple()))
+    scan_timestamp_seconds.labels(name).set(scan_start)
     scan_returncode.labels(name).set(borg_process.returncode)
     scan_info.labels(name).info({
         'returncode': str(borg_process.returncode),
