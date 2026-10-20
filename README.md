@@ -2,6 +2,8 @@
 
 a simple borg backup exporter for prometheus.
 
+![Grafana Screenshot](./src/main/grafana/dashboard.png)
+
 See the [example docker-compose.yaml](src/test/docker/compose.yaml) for how to use.
 
 ## Exported metrics
