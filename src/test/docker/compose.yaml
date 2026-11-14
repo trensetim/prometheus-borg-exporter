@@ -10,3 +10,4 @@ services:
         volumes:
             - .ssh:/home/prometheus-borg-exporter/.ssh:ro
         #   - "./my-local-repository:/var/lib/borg/repo:rw"
+        #   - "./my-local-repository.lock:/var/lock/borg/default:rw"

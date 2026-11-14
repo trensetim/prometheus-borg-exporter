@@ -15,6 +15,7 @@ See the [example docker-compose.yaml](src/test/docker/compose.yaml) for how to u
 | borg_repository_scan_returncode                          | gauge | Return code (exitcode) of the borg info subprocess used for scanning the repository. Zero if successfully scanned.                                  |
 | borg_repository_scan_info                                | gauge | Information about the last scan of the repository. Even if scan failed.                                                                             |
 | borg_repository_locked                                   | gauge | Whether the repository is currently locked (1=yes, 0=no)                                                                                            |
+| borg_repository_flocked                                  | gauge | Whether the repository is currently locked by an external flock (1=yes, 0=no)                                                                       |
 | borg_repository_chunks_count                             | gauge | Number of chunks                                                                                                                                    |
 | borg_repository_compressed_size_bytes                    | gauge | Total compressed and encrypted size of all chunks multiplied with their reference counts in bytes                                                   |
 | borg_repository_size_bytes                               | gauge | Total uncompressed size of all chunks multiplied with their reference counts                                                                        |
@@ -34,7 +35,7 @@ See the [example docker-compose.yaml](src/test/docker/compose.yaml) for how to u
 | borg_repository_latest_archive_limits_archive_size_ratio | gauge | Float between 0 and 1 describing how large this archive is relative to the maximum size allowed by Borg                                             |
 
 All metrics come with the labels `repository_name` with the name (aka path) of the repository.
-All metrics (except possible non-successful-scan metrics `borg_repository_scan_timestamp_seconds`, `scan_returncode`, `borg_repository_scan_info`, `borg_repository_locked`) come with the label `repository_id` too.
+All metrics (except possible non-successful-scan metrics `borg_repository_scan_timestamp_seconds`, `scan_returncode`, `borg_repository_scan_info`, `borg_repository_locked`, `borg_repository_flocked`) come with the label `repository_id` too.
 
 ## Configuration
 
@@ -53,6 +54,10 @@ For boolean configuration options, the values are case-sensitive, python-style `
 | BORG_REPOSITORY_PASSPHRASE_FILE                | `/etc/borg/passphrases/default`      | The path to the repository                                                                                                                                                                                                                  |
 | BORG_REPOSITORY_NAME                           | `null`                               | If set, becomes the `repository_name` label in the exported metrics. Defaults to `BORG_REPOSITORY_PATH`                                                                                                                                     |
 | BORG_REPOSITORY_BYPASS_LOCK                    | `False`                              | See [the borg documentation on --bypass-lock](https://borgbackup.readthedocs.io/en/stable/usage/general.html#common-options) This is actually not a BORG-environment variable, but one we internally transform into a command line argument |
+| BORG_REPOSITORY_FLOCK_ENABLED                  | `False`                              | Set to `True` to acquire and hold a shared `flock` (`LOCK_SH`) on `BORG_REPOSITORY_FLOCK_FILE` during each repository scan (e.g. to coordinate with an external `rsync` holding an exclusive `flock`)                                       |
+| BORG_REPOSITORY_FLOCK_FILE                     | `/var/lock/borg/default`             | Path to the `flock` lock file when `BORG_REPOSITORY_FLOCK_ENABLED=True` (created if missing; read-only mounts of an existing lock file are also supported)                                                                                  |
+| BORG_REPOSITORY_FLOCK_TIMEOUT_SECONDS          | `1.0`                                | Seconds to wait for the shared `flock` before skipping the scan, setting `borg_repository_flocked=1`, and leaving scan metrics untouched (`0` skips immediately)                                                                            |
+| BORG_REPOSITORY_FLOCK_BACKOFFS                 | `0.01,0.05,0.1,0.25,1.0,10.0`        | Backoff intervals between trying to acquire the `flock`. Comma-separated list of floats (seconds). Can also be a json-array of floats in the `config.json`.                                                                                 |
 | BORG_RSH                                       | unset                                |                                                                                                                                                                                                                                             |
 | BORG_RELOCATED_REPO_ACCESS_IS_OK               | `True`                               |                                                                                                                                                                                                                                             |
 | BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK     | `True`                               |                                                                                                                                                                                                                                             |
@@ -64,12 +69,15 @@ Some of those are defined by this exporter already (but can get overwritten). Se
 ## Configuration for multiple repositories
 
 If you need to scan multiple repositories simultaneously, you must override the [/etc/borg/exporter-config.json](src/main/resources/config.json).
-In there, you can define the `.repositories.your_repo_name = {path, passphrase_file}` accordingly.
+In there, you can define the `.repositories.your_repo_name = {path, passphrase_file, bypass_lock, flock_enabled, flock_file, flock_timeout_seconds}` accordingly (`flock_*` fields are optional and default to disabled).
 You can use the above-described environment variables as placeholders (but no other ones), using `envsubst`-notation.
 
 ## Hints
 
 When accessing a remote repository via `ssh` in a running docker container, you probably want to mount your `id_rsa` and `known_hosts` to within `/home/prometheus-borg-exporter/.ssh`.
+
+When coordinating with an external process (such as `flock /path/to/repo.lock rsync ...`), mount the lock file (or its parent directory) into the container at `/var/lock/borg/default` (or set `BORG_REPOSITORY_FLOCK_FILE`) and set `BORG_REPOSITORY_FLOCK_ENABLED=True`.
+The lock file must be stable: it must not be deleted or replaced while in use, because `flock` locks the file itself, not its path.
 
 ## Authors and acknowledgment
 

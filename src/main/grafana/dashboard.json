@@ -2729,6 +2729,28 @@
                                         "refId": "repository locked",
                                         "hidden": false
                                     }
+                                },
+                                {
+                                    "kind": "PanelQuery",
+                                    "spec": {
+                                        "query": {
+                                            "kind": "DataQuery",
+                                            "group": "prometheus",
+                                            "version": "v0",
+                                            "spec": {
+                                                "editorMode": "builder",
+                                                "expr": "borg_repository_flocked{repository_name=\"$repository_name\"}",
+                                                "legendFormat": "Repository F-Locked",
+                                                "range": true
+                                            },
+                                            "labels": {
+                                                "grafana.app/export-label": "prometheus-1",
+                                                "grafana.app/export-datasource-name": "Prometheus"
+                                            }
+                                        },
+                                        "refId": "repository flocked",
+                                        "hidden": false
+                                    }
                                 }
                             ],
                             "transformations": [],
@@ -2852,7 +2874,7 @@
                                             {
                                                 "id": "color",
                                                 "value": {
-                                                    "fixedColor": "#C4162A",
+                                                    "fixedColor": "yellow",
                                                     "mode": "fixed"
                                                 }
                                             },
@@ -2881,39 +2903,15 @@
                                                 "value": 30
                                             },
                                             {
-                                                "id": "color",
-                                                "value": {
-                                                    "mode": "thresholds"
-                                                }
-                                            },
-                                            {
-                                                "id": "thresholds",
-                                                "value": {
-                                                    "mode": "absolute",
-                                                    "steps": [
-                                                        {
-                                                            "color": "green",
-                                                            "value": 0
-                                                        },
-                                                        {
-                                                            "color": "red",
-                                                            "value": 1
-                                                        }
-                                                    ]
-                                                }
-                                            },
-                                            {
                                                 "id": "mappings",
                                                 "value": [
                                                     {
                                                         "options": {
                                                             "0": {
-                                                                "color": "dark-green",
                                                                 "index": 1,
                                                                 "text": "Not Locked"
                                                             },
                                                             "1": {
-                                                                "color": "dark-red",
                                                                 "index": 0,
                                                                 "text": "Locked"
                                                             }
@@ -2926,31 +2924,58 @@
                                     },
                                     {
                                         "matcher": {
-                                            "id": "byName",
-                                            "options": "[Repository Locked] ssh://u327185-sub1@u327185.your-storagebox.de:23/./"
+                                            "id": "byFrameRefID",
+                                            "options": "repository flocked"
                                         },
                                         "properties": [
                                             {
                                                 "id": "color",
                                                 "value": {
-                                                    "fixedColor": "yellow",
+                                                    "fixedColor": "#ffcccc",
                                                     "mode": "fixed"
                                                 }
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        "matcher": {
-                                            "id": "byName",
-                                            "options": "Repository Locked"
-                                        },
-                                        "properties": [
+                                            },
                                             {
-                                                "id": "color",
-                                                "value": {
-                                                    "fixedColor": "yellow",
-                                                    "mode": "fixed"
-                                                }
+                                                "id": "custom.axisPlacement",
+                                                "value": "right"
+                                            },
+                                            {
+                                                "id": "unit",
+                                                "value": "none"
+                                            },
+                                            {
+                                                "id": "custom.axisSoftMin",
+                                                "value": 0
+                                            },
+                                            {
+                                                "id": "custom.axisSoftMax",
+                                                "value": 1
+                                            },
+                                            {
+                                                "id": "decimals",
+                                                "value": 0
+                                            },
+                                            {
+                                                "id": "custom.fillOpacity",
+                                                "value": 30
+                                            },
+                                            {
+                                                "id": "mappings",
+                                                "value": [
+                                                    {
+                                                        "options": {
+                                                            "0": {
+                                                                "index": 1,
+                                                                "text": "Not F-Locked"
+                                                            },
+                                                            "1": {
+                                                                "index": 0,
+                                                                "text": "F-Locked"
+                                                            }
+                                                        },
+                                                        "type": "value"
+                                                    }
+                                                ]
                                             }
                                         ]
                                     }

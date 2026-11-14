@@ -14,6 +14,8 @@ from dateutil import parser
 
 from prometheus_client import start_http_server, Gauge, Enum, Info
 from config import Configuration, RepositoryConfiguration
+from log import log, LOGWARN, LOGINFO, LOGDEBUG, DEBUG_MODE
+from flock import BorgRepositoryFlockedError
 
 # define prometheus metrics as global variables for the http_server to access
 successful_scan_timestamp_seconds        = Gauge('borg_repository_successful_scan_timestamp_seconds', 'UNIX timestamp of the last successfully completed scan of the repository by the exporter', ['repository_id', 'repository_name'])
@@ -21,6 +23,7 @@ scan_timestamp_seconds                   = Gauge('borg_repository_scan_timestamp
 scan_returncode                          = Gauge('borg_repository_scan_returncode', 'Return code (exitcode) of the borg info subprocess used for scanning the repository. Zero if successfully scanned.', ['repository_name'])
 scan_info                                = Info('borg_repository_scan', 'Information about the last scan of the repository. Even if scan failed.', ['repository_name'])
 repository_locked                        = Gauge('borg_repository_locked', 'Whether the repository is currently locked (1=yes, 0=no)', ['repository_name'])
+repository_flocked                       = Gauge('borg_repository_flocked', 'Whether the repository is currently locked by an external flock (1=yes, 0=no)', ['repository_name'])
 chunks_count                             = Gauge('borg_repository_chunks_count', 'Number of chunks', ['repository_id', 'repository_name'])
 compressed_size_bytes                    = Gauge('borg_repository_compressed_size_bytes', 'Total compressed and encrypted size of all chunks multiplied with their reference counts in bytes', ['repository_id', 'repository_name'])
 size_bytes                               = Gauge('borg_repository_size_bytes', 'Total uncompressed size of all chunks multiplied with their reference counts', ['repository_id', 'repository_name'])
@@ -39,23 +42,12 @@ latest_archive_nfiles_count              = Gauge('borg_repository_latest_archive
 latest_archive_original_size_bytes       = Gauge('borg_repository_latest_archive_original_size_bytes', 'Size of files and metadata before compression in bytes', ['repository_id', 'repository_name'])
 latest_archive_limits_archive_size_ratio = Gauge('borg_repository_latest_archive_limits_archive_size_ratio', 'Float between 0 and 1 describing how large this archive is relative to the maximum size allowed by Borg', ['repository_id', 'repository_name'])
 
-debug_mode: bool = False
 borg_version: str = ""
 
 class BorgRepositoryLockedError(RuntimeError):
     """Exception raised when the borg repository is locked."""
-    def __init__(self):
-        super().__init__('borg repository is locked')
-
-LOGWARN=20
-LOGINFO=10
-LOGDEBUG=2
-
-def log(level: int, message: str):
-    """Log a message to stdout depending on the log level and debug mode."""
-    if level < 5 and not debug_mode:
-        return
-    print(message)
+    def __init__(self, message: str = 'borg repository is locked'):
+        super().__init__(message)
 
 def borg_info(config: RepositoryConfiguration) -> subprocess.CompletedProcess[bytes]:
     """Executed `borg info ... $repopath` on the shell"""
@@ -108,8 +100,9 @@ def scan_repository(config: RepositoryConfiguration):
     """Scan the borg repository and update prometheus metrics."""
     name = config.name
 
-    scan_start = mktime(datetime.now().timetuple())
-    borg_process = borg_info(config)
+    with config.flock.acquire(repository_flocked):
+        scan_start = mktime(datetime.now().timetuple())
+        borg_process = borg_info(config)
     stdout = borg_process.stdout.decode("utf-8")
     stderr = borg_process.stderr.decode("utf-8")
     args = borg_process.args
@@ -146,8 +139,7 @@ def scan_repository(config: RepositoryConfiguration):
 
     borg_process.check_returncode()
 
-    raw_borg_json = stdout
-    info = json.loads(raw_borg_json)
+    info = json.loads(stdout)
     repository_id = info['repository']['id']
 
     repository_locked.labels(name).set(0)
@@ -186,27 +178,27 @@ def scan_repository(config: RepositoryConfiguration):
     latest_archive_original_size_bytes.labels(repository_id, name).set(last['stats']['original_size'])
     latest_archive_limits_archive_size_ratio.labels(repository_id, name).set(last['limits']['max_archive_size'])
 
-def scan_repositories(repos: list[RepositoryConfiguration], allow_locked: bool = False, allow_failure: bool = False):
+def scan_repositories(repos: list[RepositoryConfiguration], allow_failure: bool = False):
     """Loops through all given repositories and collects the metrics for them"""
-    try:
-        for repo in repos:
+    for repo in repos:
+        try:
             scan_repository(repo)
-    except BorgRepositoryLockedError:
-        if not allow_locked:
-            sys.exit(15)
-        log(LOGDEBUG, "repository is currently locked. will try again later")
-    except subprocess.CalledProcessError as e:
-        log(LOGWARN, f"scan failed with returncode={e.returncode} and stderr: {e.stderr}")
-        if not allow_failure:
-            sys.exit(2)
-    except Exception as e: # pylint: disable=broad-except
-        if not allow_failure:
-            sys.exit(1)
-        log(LOGWARN, f"scan failed, but that was allowed, so ignoring. Message was: {str(e)}")
+        except BorgRepositoryFlockedError as e:
+            log(LOGINFO, f"{str(e)}. skipping scan and will try again later")
+        except BorgRepositoryLockedError:
+            log(LOGDEBUG, "repository is currently locked. will try again later")
+        except subprocess.CalledProcessError as e:
+            log(LOGWARN, f"scan failed with returncode={e.returncode} and stderr: {e.stderr}")
+            if not allow_failure:
+                sys.exit(2)
+        except Exception as e: # pylint: disable=broad-except
+            if not allow_failure:
+                sys.exit(1)
+            log(LOGWARN, f"scan failed, but that was allowed, so ignoring. Message was: {str(e)}")
 
 if __name__ == '__main__':
     configuration = Configuration.load()
-    debug_mode = configuration.debug
+    DEBUG_MODE.enable_if(configuration.debug)
     borg_version = subprocess.run(['borg', '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout.decode("utf-8")[5:-1]
 
     log(LOGDEBUG, f"http port: {configuration.http_port}")
@@ -214,11 +206,11 @@ if __name__ == '__main__':
     log(LOGDEBUG, f"allow initial scan failure: {configuration.initial_scan_failure_allowed}")
     log(LOGDEBUG, f"exit on failure: {configuration.exit_on_failure}")
     log(LOGDEBUG, f"borg version: {borg_version}")
-    log(LOGDEBUG, f"debug mode: {debug_mode}")
+    log(LOGDEBUG, f"debug mode: {DEBUG_MODE.is_enabled()}")
     log(LOGDEBUG, f"repositories: {configuration.debug_repositories_info()}")
 
     log(LOGDEBUG, "performing initial scan")
-    scan_repositories(configuration.repositories, True, configuration.initial_scan_failure_allowed)
+    scan_repositories(configuration.repositories, configuration.initial_scan_failure_allowed)
     log(LOGINFO, "initial scan finished")
 
     log(LOGDEBUG, "starting http server")
@@ -230,7 +222,7 @@ if __name__ == '__main__':
             log(LOGDEBUG, f"next rescan scheduled for {(datetime.now() + timedelta(seconds = configuration.scan_interval_seconds)).strftime('%Y-%m-%d %H:%M:%S %z')}")
             sleep(configuration.scan_interval_seconds)
             log(LOGINFO, "performing scan")
-            scan_repositories(configuration.repositories, True, configuration.exit_on_failure)
+            scan_repositories(configuration.repositories, configuration.exit_on_failure)
             log(LOGINFO, "scan finished")
     except (KeyboardInterrupt, InterruptedError):
         log(LOGWARN, "interrupted and stopped.")
