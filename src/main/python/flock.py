@@ -76,8 +76,11 @@ class Flock:
         if self._acquired:
             raise BorgRepositoryDoubleFlocked(self._repo_name)
 
-        deadline = monotonic() + self._timeout_seconds
+        start = monotonic()
+        deadline = start + self._timeout_seconds
         backoffs = self._backoffs.copy()
+
+        log(LOGDEBUG, f"acquiring shared flock '{self._path}' for repository '{self._repo_name}'...")
 
         with self._open() as lock_file:
             while True:
@@ -92,15 +95,16 @@ class Flock:
                     sleep(min(backoffs[0], remaining))
                     backoffs = backoffs[1:] if len(backoffs) > 1 else backoffs
 
-            log(LOGDEBUG, f"acquired shared flock '{self._path}' for repository '{self._repo_name}'")
+            log(LOGDEBUG, f"acquired shared flock '{self._path}' for repository '{self._repo_name}' within {monotonic() - start:.2f} seconds")
             metric.labels(self._repo_name).set(0)
             self._acquired = True
             try:
+                start = monotonic()
                 yield
             finally:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
                 self._acquired = False
-                log(LOGDEBUG, f"released shared flock '{self._path}' for repository '{self._repo_name}'")
+                log(LOGDEBUG, f"released shared flock '{self._path}' for repository '{self._repo_name}' after {monotonic() - start:.2f} seconds")
 
     def _open(self) -> BinaryIO:
         """
