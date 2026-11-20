@@ -13,9 +13,10 @@ from typing import BinaryIO
 from dateutil import parser
 
 from prometheus_client import start_http_server, Gauge, Enum, Info
-from config import Configuration, RepositoryConfiguration
+from config import Configuration, RepositoryConfiguration, BorgLockConfigurtation
 from log import log, LOGWARN, LOGINFO, LOGDEBUG, DEBUG_MODE
 from flock import BorgRepositoryFlockedError
+from borglock import is_borg_repo_ex_locked
 
 # define prometheus metrics as global variables for the http_server to access
 successful_scan_timestamp_seconds        = Gauge('borg_repository_successful_scan_timestamp_seconds', 'UNIX timestamp of the last successfully completed scan of the repository by the exporter', ['repository_id', 'repository_name'])
@@ -49,8 +50,22 @@ class BorgRepositoryLockedError(RuntimeError):
     def __init__(self, message: str = 'borg repository is locked'):
         super().__init__(message)
 
+    @staticmethod
+    def set_and_raise(repo_name: str):
+        """Sets `repository_locked{repository_name=name} 1` and raises this exception type"""
+        repository_locked.labels(repo_name).set(1)
+        raise BorgRepositoryLockedError()
+
 def borg_info(config: RepositoryConfiguration) -> subprocess.CompletedProcess[bytes]:
     """Executed `borg info ... $repopath` on the shell"""
+
+    if (
+        config.locking == BorgLockConfigurtation.RESPECT
+        and
+        is_borg_repo_ex_locked(config.path, config.locking_timeout_seconds)
+    ):
+        BorgRepositoryLockedError.set_and_raise(config.name)
+
     cmd = ['borg', 'info', '--json', '--last', '1']
     env: dict[str, str] = {}
 
@@ -72,7 +87,7 @@ def borg_info(config: RepositoryConfiguration) -> subprocess.CompletedProcess[by
     # internal configuration, we rely upon with out implementation here
     env["BORG_EXIT_CODES"] = "modern"
     env["BORG_REPO"] = config.path
-    if config.bypass_lock:
+    if config.locking.is_append_bypass_arg():
         cmd.append('--bypass-lock')
 
     passphrase_file: BinaryIO | None = None
@@ -95,7 +110,6 @@ def borg_info(config: RepositoryConfiguration) -> subprocess.CompletedProcess[by
         if passphrase_file is not None:
             passphrase_file.close()
 
-
 def scan_repository(config: RepositoryConfiguration):
     """Scan the borg repository and update prometheus metrics."""
     name = config.name
@@ -103,6 +117,7 @@ def scan_repository(config: RepositoryConfiguration):
     with config.flock.acquire(repository_flocked):
         scan_start = mktime(datetime.now().timetuple())
         borg_process = borg_info(config)
+
     stdout = borg_process.stdout.decode("utf-8")
     stderr = borg_process.stderr.decode("utf-8")
     args = borg_process.args
@@ -126,16 +141,14 @@ def scan_repository(config: RepositoryConfiguration):
             error_str = stderr
             error_json = json.loads(error_str)
             if error_json['msgid'] == "LockTimeout":
-                repository_locked.labels(name).set(1)
-                raise BorgRepositoryLockedError()
+                BorgRepositoryLockedError.set_and_raise(config.name)
         except json.JSONDecodeError:
             pass # okay, we failed but not due to a lock. Other errors may not be json-decodable.
 
         # alternatively, check for borg's modern exit codes (see BORG_EXIT_CODES=modern in borg documentation)
         # https://borgbackup.readthedocs.io/en/stable/internals/frontends.html#msgid
         if borg_process.returncode == 73:
-            repository_locked.labels(name).set(1)
-            raise BorgRepositoryLockedError()
+            BorgRepositoryLockedError.set_and_raise(config.name)
 
     borg_process.check_returncode()
 
@@ -214,7 +227,7 @@ if __name__ == '__main__':
     log(LOGINFO, "initial scan finished")
 
     log(LOGDEBUG, "starting http server")
-    http_server = start_http_server(configuration.http_port)
+    http_server = start_http_server(configuration.http_port) # daemon thread -> auto-stopped up on exit
     log(LOGINFO, "up.")
 
     try:

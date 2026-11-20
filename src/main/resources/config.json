@@ -14,6 +14,8 @@
         "${BORG_REPOSITORY_NAME}": {
             "path": "${BORG_REPOSITORY_PATH}",
             "bypass_lock": "${BORG_REPOSITORY_BYPASS_LOCK}",
+            "locking": "${BORG_REPOSITORY_LOCKING}",
+            "locking_timeout_seconds": "${BORG_REPOSITORY_LOCKING_TIMEOUT_SECONDS}",
             "passphrase_file": "${BORG_REPOSITORY_PASSPHRASE_FILE}",
             "flock_enabled": "${BORG_REPOSITORY_FLOCK_ENABLED}",
             "flock_file": "${BORG_REPOSITORY_FLOCK_FILE}",

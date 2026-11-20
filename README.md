@@ -42,25 +42,26 @@ All metrics (except possible non-successful-scan metrics `borg_repository_scan_t
 The configuration is done by environment variables for simple cases (only one repository).
 For boolean configuration options, the values are case-sensitive, python-style `True` or `False`!
 
-| environmental variable                         | default                              | description                                                                                                                                                                                                                                 |
-| ---------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PROMETHEUS_EXPORTER_HTTP_PORT                  | 9401                                 | HTTP port number of the prometheus exporter                                                                                                                                                                                                 |
-| PROMETHEUS_EXPORTER_SCAN_INTERVAL_SECONDS      | 1800                                 | How often to run `borg info` on the repository, default is 30 minutes                                                                                                                                                                       |
-| PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE | `False`                              | set to `True` if you want to allow the initial repository scan to fail (maybe if the repo is expected to possibly be locked on startup)                                                                                                     |
-| PROMETHEUS_EXPORTER_EXIT_ON_FAILURE            | `False`                              | set to `True` if you want the exporter to exit on any failure (except `repository is locked`) AFTER the initial scan                                                                                                                        |
-| PROMETHEUS_EXPORTER_CONFIG_FILE                | `/etc/borg/exporter-config.json`     | Where to mount the config file to                                                                                                                                                                                                           |
-| PROMETHEUS_EXPORTER_DEBUG                      | `False`                              | set to `True` if you want more logging                                                                                                                                                                                                      |
-| BORG_REPOSITORY_PATH                           | `/var/lib/borg/repositories/default` | The path to the repository                                                                                                                                                                                                                  |
-| BORG_REPOSITORY_PASSPHRASE_FILE                | `/etc/borg/passphrases/default`      | The path to the repository                                                                                                                                                                                                                  |
-| BORG_REPOSITORY_NAME                           | `null`                               | If set, becomes the `repository_name` label in the exported metrics. Defaults to `BORG_REPOSITORY_PATH`                                                                                                                                     |
-| BORG_REPOSITORY_BYPASS_LOCK                    | `False`                              | See [the borg documentation on --bypass-lock](https://borgbackup.readthedocs.io/en/stable/usage/general.html#common-options) This is actually not a BORG-environment variable, but one we internally transform into a command line argument |
-| BORG_REPOSITORY_FLOCK_ENABLED                  | `False`                              | Set to `True` to acquire and hold a shared `flock` (`LOCK_SH`) on `BORG_REPOSITORY_FLOCK_FILE` during each repository scan (e.g. to coordinate with an external `rsync` holding an exclusive `flock`)                                       |
-| BORG_REPOSITORY_FLOCK_FILE                     | `/var/lock/borg/default`             | Path to the `flock` lock file when `BORG_REPOSITORY_FLOCK_ENABLED=True` (created if missing; read-only mounts of an existing lock file are also supported)                                                                                  |
-| BORG_REPOSITORY_FLOCK_TIMEOUT_SECONDS          | `1.0`                                | Seconds to wait for the shared `flock` before skipping the scan, setting `borg_repository_flocked=1`, and leaving scan metrics untouched (`0` skips immediately)                                                                            |
-| BORG_REPOSITORY_FLOCK_BACKOFFS                 | `0.01,0.05,0.1,0.25,1.0,10.0`        | Backoff intervals between trying to acquire the `flock`. Comma-separated list of floats (seconds). Can also be a json-array of floats in the `config.json`.                                                                                 |
-| BORG_RSH                                       | unset                                |                                                                                                                                                                                                                                             |
-| BORG_RELOCATED_REPO_ACCESS_IS_OK               | `True`                               |                                                                                                                                                                                                                                             |
-| BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK     | `True`                               |                                                                                                                                                                                                                                             |
+| environmental variable                         | default                              | description                                                                                                                                                                                           |
+| ---------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PROMETHEUS_EXPORTER_HTTP_PORT                  | 9401                                 | HTTP port number of the prometheus exporter                                                                                                                                                           |
+| PROMETHEUS_EXPORTER_SCAN_INTERVAL_SECONDS      | 1800                                 | How often to run `borg info` on the repository, default is 30 minutes                                                                                                                                 |
+| PROMETHEUS_EXPORTER_ALLOW_INITIAL_SCAN_FAILURE | `False`                              | set to `True` if you want to allow the initial repository scan to fail (maybe if the repo is expected to possibly be locked on startup)                                                               |
+| PROMETHEUS_EXPORTER_EXIT_ON_FAILURE            | `False`                              | set to `True` if you want the exporter to exit on any failure (except `repository is locked`) AFTER the initial scan                                                                                  |
+| PROMETHEUS_EXPORTER_CONFIG_FILE                | `/etc/borg/exporter-config.json`     | Where to mount the config file to                                                                                                                                                                     |
+| PROMETHEUS_EXPORTER_DEBUG                      | `False`                              | set to `True` if you want more logging                                                                                                                                                                |
+| BORG_REPOSITORY_PATH                           | `/var/lib/borg/repositories/default` | The path to the repository                                                                                                                                                                            |
+| BORG_REPOSITORY_PASSPHRASE_FILE                | `/etc/borg/passphrases/default`      | The path to the repository                                                                                                                                                                            |
+| BORG_REPOSITORY_NAME                           | `null`                               | If set, becomes the `repository_name` label in the exported metrics. Defaults to `BORG_REPOSITORY_PATH`                                                                                               |
+| BORG_REPOSITORY_LOCKING                        | `acquire`                            | See [locking](#locking)                                                                                                                                                                               |
+| BORG_REPOSITORY_LOCKING_TIMEOUT_SECONDS        | `0`                                  | See [locking](#locking)                                                                                                                                                                               |
+| BORG_REPOSITORY_FLOCK_ENABLED                  | `False`                              | Set to `True` to acquire and hold a shared `flock` (`LOCK_SH`) on `BORG_REPOSITORY_FLOCK_FILE` during each repository scan (e.g. to coordinate with an external `rsync` holding an exclusive `flock`) |
+| BORG_REPOSITORY_FLOCK_FILE                     | `/var/lock/borg/default`             | Path to the `flock` lock file when `BORG_REPOSITORY_FLOCK_ENABLED=True` (created if missing; read-only mounts of an existing lock file are also supported)                                            |
+| BORG_REPOSITORY_FLOCK_TIMEOUT_SECONDS          | `1.0`                                | Seconds to wait for the shared `flock` before skipping the scan, setting `borg_repository_flocked=1`, and leaving scan metrics untouched (`0` skips immediately)                                      |
+| BORG_REPOSITORY_FLOCK_BACKOFFS                 | `0.01,0.05,0.1,0.25,1.0,10.0`        | Backoff intervals between trying to acquire the `flock`. Comma-separated list of floats (seconds). Can also be a json-array of floats in the `config.json`.                                           |
+| BORG_RSH                                       | unset                                |                                                                                                                                                                                                       |
+| BORG_RELOCATED_REPO_ACCESS_IS_OK               | `True`                               |                                                                                                                                                                                                       |
+| BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK     | `True`                               |                                                                                                                                                                                                       |
 
 All environment variables like `BORG_*` will be proxied through to the borg CLI.
 See [the borg documentation](https://borgbackup.readthedocs.io/en/stable/usage/general.html) for any env variable you may want to set.
@@ -69,15 +70,33 @@ Some of those are defined by this exporter already (but can get overwritten). Se
 ## Configuration for multiple repositories
 
 If you need to scan multiple repositories simultaneously, you must override the [/etc/borg/exporter-config.json](src/main/resources/config.json).
-In there, you can define the `.repositories.your_repo_name = {path, passphrase_file, bypass_lock, flock_enabled, flock_file, flock_timeout_seconds}` accordingly (`flock_*` fields are optional and default to disabled).
+In there, you can define the `.repositories.your_repo_name = {path, passphrase_file, locking, flock_enabled, flock_file, flock_timeout_seconds}` accordingly (`flock_*` fields are optional and default to disabled).
 You can use the above-described environment variables as placeholders (but no other ones), using `envsubst`-notation.
+
+## Locking
+
+There are 2 locking mechanisms supported.
+
+### Borg Builtin Locks
+
+The exporter can handle borgs builtin repository locks in 3 different ways.
+
+- `bypass`: Unconditionally append [--bypass-lock](https://borgbackup.readthedocs.io/en/stable/usage/general.html#common-options) command line argument to borg cli commands.
+- `acquire`: Do not append `--bypass-lock` (default). Lets borg cli acquire a shared read lock during it's operations.
+- `respect`: Appends `--bypass-lock` to borg cli commands, but, before that, examines the repository file structure to discover existing **exclusive borg locks**. If any are found, the repository is considered "locked" and no scan is even attempted. (Only tested on borg v1 so far). If `BORG_REPOSITORY_LOCKING_TIMEOUT_SECONDS` is set (ie. not zero), overly old `lock.exclusive` directory-locks are ignored (eg. if you deal with a "no-delete" rsync'ed replica of a repository, where locks are kept dangling. In that case, you are on best-luck about whether your timeout exceeds any actual write operation on the repo), but an.
+
+These modes facilitate using the exporter, when having the repository mounted as read-only, or when having the repository mounted from a remote (where borg's process PID liveness checks yield incorrect results), or when dealing with an rsync'ed copy of a repository (where concurrent operations must not be disturbed by acquiring local locks that do not propagate to the primary copy).
+
+Note that the `borg_repository_locked` metric **does not** yield timestamps about when any particular lock was acquired/released, but only tells when the exporter detected the lock.
+
+### Flocks
+
+When coordinating with an external process (such as `flock /path/to/repo.lock rsync ...`), mount the lock file (or its parent directory) into the container at `/var/lock/borg/default` (or set `BORG_REPOSITORY_FLOCK_FILE`) and set `BORG_REPOSITORY_FLOCK_ENABLED=True`.
+The lock file must be stable: it must not be deleted or replaced while in use, because `flock` **locks the files inode itself**, not its path.
 
 ## Hints
 
 When accessing a remote repository via `ssh` in a running docker container, you probably want to mount your `id_rsa` and `known_hosts` to within `/home/prometheus-borg-exporter/.ssh`.
-
-When coordinating with an external process (such as `flock /path/to/repo.lock rsync ...`), mount the lock file (or its parent directory) into the container at `/var/lock/borg/default` (or set `BORG_REPOSITORY_FLOCK_FILE`) and set `BORG_REPOSITORY_FLOCK_ENABLED=True`.
-The lock file must be stable: it must not be deleted or replaced while in use, because `flock` locks the file itself, not its path.
 
 ## Authors and acknowledgment
 

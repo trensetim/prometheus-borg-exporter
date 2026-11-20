@@ -1,5 +1,6 @@
 """Handles loading the configuration of the program"""
 
+import enum
 import os
 import re
 from string import Template
@@ -13,11 +14,77 @@ def _parse_bool(s: str | bool) -> bool:
     s = s.lower().strip()
     return s in ["true", "yes", "y", "t"]
 
+def _parse_int(s: str | int) -> int:
+    if isinstance(s, int):
+        return s
+    s = s.strip()
+    if not s.isdigit():
+        raise ValueError(f"Invalid integer value: {s}")
+    return int(s)
+
+class InvalidRepositoryConfigurationError(RuntimeError):
+    """Thrown if schema of a RepositoryConfiguration is wrong"""
+    def __init__(self, message: str | None) -> None:
+        if message is None:
+            message = "repository configuration invalid"
+        else:
+            message = "repository configuration invalid: " + message
+        super().__init__(message)
+
+class BorgLockConfigurtation(enum.Enum):
+    """Whether the borg-internal locking mechanism shall be used."""
+
+    BYPASS = "bypass"
+    """Call borg with --bypass-lock. Useful for read-only filesystems."""
+
+    ACQUIRE = "acquire"
+    """
+    The default for borg: acquires a suitable lock for interacting with the repo through the borg cli.
+    Since this program is a prometheus-exporter, it performs only read-only operations on the repo and thus borg cli
+    will only acquire shared locks (not exclusive ones).
+    """
+
+    RESPECT = "respect"
+    """
+    Call borg with --bypass-lock, but manually inspect the repository directory structure before,
+    to determine whether the repo is exclusively locked.
+    Does not perform a liveness check on the other locking processes, which borg would normally do.
+    This is useful when working on a read-only filesystem, or in containers, where
+    the writing processes would live in a different process namespace and/or the exporter only gets
+    a RO-mount of the repo. It is also helpful if working on an rsynced replica of the repo, where the
+    writer only exists on a different host and we must behave exclusively read-only to not disturb
+    concurrent rsync operations.
+    """
+
+    def is_append_bypass_arg(self):
+        """Whether we should call borg cli with --bypass-lock"""
+        if self == BorgLockConfigurtation.BYPASS:
+            return True
+        if self == BorgLockConfigurtation.ACQUIRE:
+            return False
+        if self == BorgLockConfigurtation.RESPECT:
+            return True
+        raise RuntimeError(f"Unknown {BorgLockConfigurtation.__name__}: {str(self)}")
+
+
+    @staticmethod
+    def parse(raw: str) -> "BorgLockConfigurtation":
+        """Parse from a configuration value."""
+        lraw = raw.lower()
+        if lraw == "acquire":
+            return BorgLockConfigurtation.ACQUIRE
+        if lraw == "bypass":
+            return BorgLockConfigurtation.BYPASS
+        if lraw == "respect":
+            return BorgLockConfigurtation.RESPECT
+        raise RuntimeError(f"Unknown value for a {BorgLockConfigurtation.__name__}: " + raw)
+
 class RepositoryConfiguration:
     """Configuration for reading a single repository (parsed)"""
     name: str = "default"
     path: str = "/var/lib/borg/repositories/default"
-    bypass_lock: bool = False
+    locking: BorgLockConfigurtation = BorgLockConfigurtation.ACQUIRE
+    locking_timeout_seconds: int = 0
     passphrase_file: str = "/etc/borg/passphrases/default"
     flock: Flock
 
@@ -30,7 +97,8 @@ class RepositoryConfiguration:
         return {
             "name": self.name,
             "path": self.path,
-            "bypass_lock": self.bypass_lock,
+            "locking": self.locking.value,
+            "locking_timeout_seconds": self.locking_timeout_seconds,
             "passphrase_file": self.passphrase_file,
             "flock_enabled": self.flock.is_enabled(),
             "flock_file": self.flock.get_file_path(),
@@ -94,13 +162,37 @@ class RepositoryConfiguration:
         )
 
     @staticmethod
-    def parse(name: str, json_obj: object) -> "RepositoryConfiguration":
+    def parse(name: str, json_obj: dict[str, Any]) -> "RepositoryConfiguration":
         """parses a json-deserialized object into the actual class"""
+
+        if json_obj.get("locking") is None:
+            if json_obj.get("bypass_lock") is not None: # down-compatibility
+                if _parse_bool(json_obj.get("bypass_lock", "false")):
+                    json_obj["locking"] = BorgLockConfigurtation.BYPASS.value
+                else:
+                    json_obj["locking"] = BorgLockConfigurtation.ACQUIRE.value
+            else:
+                json_obj["locking"] = BorgLockConfigurtation.ACQUIRE.value
+        if not isinstance(json_obj["locking"], str) or len(json_obj["locking"]) == 0:
+            raise InvalidRepositoryConfigurationError("'locking' must be nonempty str")
+
+        if not isinstance(json_obj.get("path"), str) or len(json_obj["path"]) == 0:
+            raise InvalidRepositoryConfigurationError("'path' must be nonempty str")
+
+        if json_obj.get("passphrase_file") is not None:
+            if not isinstance(json_obj.get("passphrase_file"), str): # allow empty if unused
+                raise InvalidRepositoryConfigurationError("'passphrase_file' must be str")
+
+        locking_timeout_seconds = _parse_int(json_obj.get("locking_timeout_seconds", 0))
+        if locking_timeout_seconds < 0:
+            raise InvalidRepositoryConfigurationError("'locking_timeout_seconds' must be non-negative (0 = disabled)")
+
         r = RepositoryConfiguration()
         r.name = name
-        r.path = json_obj["path"] # type: ignore
-        r.bypass_lock = _parse_bool(json_obj["bypass_lock"]) # type: ignore
-        r.passphrase_file = json_obj["passphrase_file"] # type: ignore
+        r.path = json_obj["path"]
+        r.locking = BorgLockConfigurtation.parse(json_obj["locking"])
+        r.passphrase_file = json_obj["passphrase_file"] or ""
+        r.locking_timeout_seconds = locking_timeout_seconds
         r.flock = RepositoryConfiguration._parse_flock(name, json_obj)
         return r
 
@@ -134,7 +226,9 @@ class Configuration:
             "BORG_REPOSITORY_NAME": os.getenv("BORG_REPOSITORY_NAME", "default"),
             "BORG_REPOSITORY_PATH": os.getenv("BORG_REPOSITORY_PATH", "/var/lib/borg/repositories/default"),
             "BORG_REPOSITORY_PASSPHRASE_FILE": os.getenv("BORG_REPOSITORY_PASSPHRASE_FILE", "/etc/borg/passphrases/default"),
-            "BORG_REPOSITORY_BYPASS_LOCK": os.getenv("BORG_REPOSITORY_BYPASS_LOCK", "false"),
+            "BORG_REPOSITORY_BYPASS_LOCK": os.getenv("BORG_REPOSITORY_BYPASS_LOCK", "false"), # for down-compatibility
+            "BORG_REPOSITORY_LOCKING": os.getenv("BORG_REPOSITORY_LOCKING", BorgLockConfigurtation.ACQUIRE.value),
+            "BORG_REPOSITORY_LOCKING_TIMEOUT_SECONDS": os.getenv("BORG_REPOSITORY_LOCKING_TIMEOUT_SECONDS", "0"),
             "BORG_REPOSITORY_FLOCK_ENABLED": os.getenv("BORG_REPOSITORY_FLOCK_ENABLED", "false"),
             "BORG_REPOSITORY_FLOCK_FILE": os.getenv("BORG_REPOSITORY_FLOCK_FILE", "/var/lock/borg/default"),
             "BORG_REPOSITORY_FLOCK_TIMEOUT_SECONDS": os.getenv("BORG_REPOSITORY_FLOCK_TIMEOUT_SECONDS", "1.0"),
