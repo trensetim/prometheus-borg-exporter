@@ -4,7 +4,11 @@ a simple borg backup exporter for prometheus.
 
 ![Grafana Screenshot](./src/main/grafana/dashboard.png)
 
-See the [example docker-compose.yaml](src/test/docker/compose.yaml) for how to use.
+## Install
+
+Per-Release tags are available at `docker-registry.timtrense.com/tim/prometheus-borg-exporter`.
+See [the example docker compose.yaml](./src/test/docker/compose.yaml).
+The source code is mirrored from [my gitlab](https://gitlab.timtrense.com/tim/prometheus-borg-exporter) to [GitHub](https://github.com/trensetim/prometheus-borg-exporter).
 
 ## Exported metrics
 
